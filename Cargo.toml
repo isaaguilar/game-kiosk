@@ -1,5 +1,5 @@
 [workspace]
-members = ["charades", "pictionary"]
+members = ["charades", "pictionary", "trivia"]
 
 [package]
 name = "kiosk"

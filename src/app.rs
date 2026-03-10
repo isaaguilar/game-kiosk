@@ -2,6 +2,7 @@
 pub enum GameSelection {
     Charades,
     Pictionary,
+    Trivia,
 }
 
 impl GameSelection {
@@ -9,6 +10,7 @@ impl GameSelection {
         match self {
             GameSelection::Charades => "Charades",
             GameSelection::Pictionary => "Pictionary",
+            GameSelection::Trivia => "Trivia",
         }
     }
 
@@ -16,11 +18,16 @@ impl GameSelection {
         match self {
             GameSelection::Charades => "charades",
             GameSelection::Pictionary => "pictionary",
+            GameSelection::Trivia => "trivia",
         }
     }
 }
 
-pub const MENU_ITEMS: [GameSelection; 2] = [GameSelection::Charades, GameSelection::Pictionary];
+pub const MENU_ITEMS: [GameSelection; 3] = [
+    GameSelection::Charades,
+    GameSelection::Pictionary,
+    GameSelection::Trivia,
+];
 
 pub enum AppState {
     GameSelect { selected: usize },

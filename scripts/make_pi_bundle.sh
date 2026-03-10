@@ -58,7 +58,7 @@ if [[ "$DO_BUILD" -eq 1 ]]; then
 fi
 
 BIN_DIR="${REPO_ROOT}/target/${TARGET}/release"
-for b in kiosk charades pictionary; do
+for b in kiosk charades pictionary trivia; do
   if [[ ! -f "${BIN_DIR}/${b}" ]]; then
     echo "Missing binary: ${BIN_DIR}/${b}" >&2
     echo "Run without --no-build, or verify your target/toolchain." >&2
@@ -70,12 +70,14 @@ echo "==> Creating bundle at ${OUTPUT_DIR}"
 cp "${BIN_DIR}/kiosk" "${OUTPUT_DIR}/kiosk"
 cp "${BIN_DIR}/charades" "${OUTPUT_DIR}/charades"
 cp "${BIN_DIR}/pictionary" "${OUTPUT_DIR}/pictionary"
+cp "${BIN_DIR}/trivia" "${OUTPUT_DIR}/trivia"
 
-rm -rf "${OUTPUT_DIR}/charades-assets" "${OUTPUT_DIR}/pictionary-assets"
+rm -rf "${OUTPUT_DIR}/charades-assets" "${OUTPUT_DIR}/pictionary-assets" "${OUTPUT_DIR}/trivia-assets"
 cp -R "${REPO_ROOT}/charades/assets" "${OUTPUT_DIR}/charades-assets"
 cp -R "${REPO_ROOT}/pictionary/assets" "${OUTPUT_DIR}/pictionary-assets"
+cp -R "${REPO_ROOT}/trivia/assets" "${OUTPUT_DIR}/trivia-assets"
 cp "${REPO_ROOT}/kiosk.desktop" "${OUTPUT_DIR}/kiosk.desktop"
 
-chmod +x "${OUTPUT_DIR}/kiosk" "${OUTPUT_DIR}/charades" "${OUTPUT_DIR}/pictionary"
+chmod +x "${OUTPUT_DIR}/kiosk" "${OUTPUT_DIR}/charades" "${OUTPUT_DIR}/pictionary" "${OUTPUT_DIR}/trivia"
 
 echo "Bundle ready: ${OUTPUT_DIR}"

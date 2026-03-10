@@ -6,7 +6,7 @@ usage() {
 Create/update bundle locally, copy it to Raspberry Pi via SCP, and run the Pi-local installer over SSH.
 
 Usage:
-  ./scripts/deploy_pi_remote.sh --host HOST [--user USER] [--target TARGET] [--bundle-dir DIR] [--remote-dir DIR] [--no-build] [--no-autostart]
+  ./scripts/deploy_pi_remote.sh --host HOST [--user USER] [--target TARGET] [--bundle-dir DIR] [--remote-dir DIR] [--api-key-file FILE] [--no-build] [--no-autostart]
 
 Defaults:
   --user        pi
@@ -15,6 +15,7 @@ Defaults:
   --remote-dir  ~/pi-bundle
   build         enabled
   autostart     enabled
+  --api-key-file  (optional) local trivia.env file to upload to Pi
 USAGE
 }
 
@@ -25,6 +26,7 @@ BUNDLE_DIR="$(pwd)/dist/pi-bundle"
 REMOTE_DIR="~/pi-bundle"
 DO_BUILD=1
 ENABLE_AUTOSTART=1
+API_KEY_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,6 +58,10 @@ while [[ $# -gt 0 ]]; do
       ENABLE_AUTOSTART=0
       shift
       ;;
+    --api-key-file)
+      API_KEY_FILE="${2:-}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -71,6 +77,11 @@ done
 if [[ -z "$HOST" ]]; then
   echo "Error: --host is required" >&2
   usage
+  exit 1
+fi
+
+if [[ -n "$API_KEY_FILE" && ! -f "$API_KEY_FILE" ]]; then
+  echo "Error: --api-key-file not found: $API_KEY_FILE" >&2
   exit 1
 fi
 
@@ -102,6 +113,14 @@ fi
 
 echo "==> Running installer on Pi"
 ssh "$REMOTE" "$REMOTE_CMD"
+
+if [[ -n "$API_KEY_FILE" ]]; then
+  REMOTE_ENV=".config/games-kiosk/trivia.env"
+  echo "==> Uploading API key file"
+  ssh "$REMOTE" "mkdir -p ~/.config/games-kiosk"
+  scp "$API_KEY_FILE" "${REMOTE}:${REMOTE_ENV}"
+  ssh "$REMOTE" "chmod 600 ${REMOTE_ENV}"
+fi
 
 echo
 echo "Remote deploy complete."

@@ -72,8 +72,10 @@ This creates `dist/pi-bundle/` containing:
 - `kiosk`
 - `charades`
 - `pictionary`
+- `trivia`
 - `charades-assets/`
 - `pictionary-assets/`
+- `trivia-assets/`
 - `kiosk.desktop`
 
 Move `dist/pi-bundle/` to your Pi by any local method (USB drive, Samba share, local copy).
@@ -119,6 +121,28 @@ You can disable autostart during remote install:
 ```
 
 If SSH keys are not configured, `scp`/`ssh` will prompt for password automatically.
+
+## Trivia API Key On Pi (Safe Launch)
+
+Installer now creates:
+
+- launcher: `~/.local/games-kiosk/kiosk-launch`
+- env file: `~/.config/games-kiosk/trivia.env` (permission `0600`)
+
+Set your key only on the Pi:
+
+```bash
+chmod 600 ~/.config/games-kiosk/trivia.env
+nano ~/.config/games-kiosk/trivia.env
+```
+
+Put this in the file:
+
+```bash
+export GOOGLE_API_KEY="your_api_key_here"
+```
+
+Desktop/autostart now launches the wrapper script, which sources `trivia.env` and then starts `kiosk`.
 
 ## Build for Raspberry Pi 4 (Manual)
 

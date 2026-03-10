@@ -55,19 +55,28 @@ impl Renderer {
             TEAL,
         );
 
-        let item_size = 56.0_f32;
+        let item_size = 48.0_f32;
         let area_top = self.height * 2 / 5;
-        let area_bottom = self.height * 9 / 10;
-        let step = (area_bottom - area_top) / (MENU_ITEMS.len() + 1);
+        let area_bottom = self.height * 17 / 20;
+        let pad_x = 22usize;
+        let pad_y = 8usize;
+        let max_label_h = MENU_ITEMS
+            .iter()
+            .map(|item| self.measure_text(item.label(), item_size).1)
+            .max()
+            .unwrap_or(item_size as usize);
+        let min_gap = 14usize;
+        let step = (max_label_h + 2 * pad_y + min_gap).max(1);
+        let total_span = step.saturating_mul(MENU_ITEMS.len().saturating_sub(1));
+        let available = area_bottom.saturating_sub(area_top);
+        let start_y = area_top + available.saturating_sub(total_span) / 2;
 
         for (i, item) in MENU_ITEMS.iter().enumerate() {
-            let y = area_top + step * (i + 1);
+            let y = start_y + step * i;
             let color = if i == selected { GOLD } else { WHITE };
             self.draw_text_centered(buf, item.label(), item_size, cx, y, color);
             if i == selected {
                 let (tw, th) = self.measure_text(item.label(), item_size);
-                let pad_x = 30usize;
-                let pad_y = 14usize;
                 let x0 = cx.saturating_sub(tw / 2 + pad_x);
                 let y0 = y.saturating_sub(th / 2 + pad_y);
                 let x1 = (cx + tw / 2 + pad_x).min(self.width - 1);
@@ -179,7 +188,13 @@ impl Renderer {
             .map(|g| (g.x + g.width as f32) as i32)
             .max()
             .unwrap_or(0);
-        let height = layout.height() as usize;
+        let min_y = glyphs.iter().map(|g| g.y as i32).min().unwrap_or(0);
+        let max_y = glyphs
+            .iter()
+            .map(|g| (g.y + g.height as f32) as i32)
+            .max()
+            .unwrap_or(0);
+        let height = (max_y - min_y).unsigned_abs() as usize;
         let width = (max_x - min_x).unsigned_abs() as usize;
         (width, height)
     }

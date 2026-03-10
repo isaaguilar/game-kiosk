@@ -41,7 +41,7 @@ impl Renderer {
     fn draw_menu(&self, buf: &mut Vec<u32>, selected: usize) {
         let title = "CHARADES";
         let title_size = 72.0_f32;
-        let item_size = 48.0_f32;
+        let item_size = 42.0_f32;
         let cx = self.width / 2;
 
         // Title
@@ -51,18 +51,27 @@ impl Renderer {
         // Menu items — spread evenly in the lower 60% of screen
         let item_count = MENU_ITEMS.len();
         let area_top = self.height * 2 / 5;
-        let area_bottom = self.height * 9 / 10;
-        let step = (area_bottom - area_top) / (item_count + 1);
+        let area_bottom = self.height * 17 / 20;
+        let pad_x = 20usize;
+        let pad_y = 8usize;
+        let max_label_h = MENU_ITEMS
+            .iter()
+            .map(|item| self.measure_text(item.label(), item_size).1)
+            .max()
+            .unwrap_or(item_size as usize);
+        let min_gap = 14usize;
+        let step = (max_label_h + 2 * pad_y + min_gap).max(1);
+        let total_span = step.saturating_mul(item_count.saturating_sub(1));
+        let available = area_bottom.saturating_sub(area_top);
+        let start_y = area_top + available.saturating_sub(total_span) / 2;
 
         for (i, item) in MENU_ITEMS.iter().enumerate() {
-            let item_y = area_top + step * (i + 1);
+            let item_y = start_y + step * i;
             self.draw_text_centered(buf, item.label(), item_size, cx, item_y, WHITE);
 
             if i == selected {
                 // Draw outline box around selected item
                 let (tw, th) = self.measure_text(item.label(), item_size);
-                let pad_x = 24_usize;
-                let pad_y = 12_usize;
                 let x0 = cx.saturating_sub(tw / 2 + pad_x);
                 let y0 = item_y.saturating_sub(th / 2 + pad_y);
                 let x1 = (cx + tw / 2 + pad_x).min(self.width - 1);
@@ -116,7 +125,13 @@ impl Renderer {
         }
         let min_x = glyphs.iter().map(|g| g.x as i32).min().unwrap_or(0);
         let max_x = glyphs.iter().map(|g| (g.x + g.width as f32) as i32).max().unwrap_or(0);
-        let height = layout.height() as usize;
+        let min_y = glyphs.iter().map(|g| g.y as i32).min().unwrap_or(0);
+        let max_y = glyphs
+            .iter()
+            .map(|g| (g.y + g.height as f32) as i32)
+            .max()
+            .unwrap_or(0);
+        let height = (max_y - min_y).unsigned_abs() as usize;
         let width = (max_x - min_x).unsigned_abs() as usize;
         (width, height)
     }

@@ -17,8 +17,10 @@ Expected source-dir layout:
   kiosk
   charades
   pictionary
+  trivia
   charades-assets/
   pictionary-assets/
+  trivia-assets/
   kiosk.desktop
 USAGE
 }
@@ -70,11 +72,13 @@ required_files=(
   "${SOURCE_DIR}/kiosk"
   "${SOURCE_DIR}/charades"
   "${SOURCE_DIR}/pictionary"
+  "${SOURCE_DIR}/trivia"
   "${SOURCE_DIR}/kiosk.desktop"
 )
 required_dirs=(
   "${SOURCE_DIR}/charades-assets"
   "${SOURCE_DIR}/pictionary-assets"
+  "${SOURCE_DIR}/trivia-assets"
 )
 
 for file in "${required_files[@]}"; do
@@ -93,12 +97,37 @@ done
 DESKTOP_DIR="${HOME}/Desktop"
 APPS_DIR="${HOME}/.local/share/applications"
 AUTOSTART_DIR="${HOME}/.config/autostart"
+CONFIG_DIR="${HOME}/.config/games-kiosk"
+ENV_FILE="${CONFIG_DIR}/trivia.env"
+LAUNCHER="${INSTALL_DIR}/kiosk-launch"
 
 run() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "[dry-run] $*"
   else
     eval "$@"
+  fi
+}
+
+# Replace executables via rename so deploys work while the current kiosk binary is running.
+install_executable() {
+  local src="$1"
+  local dest="$2"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "[dry-run] install ${src} -> ${dest} via atomic rename"
+    return
+  fi
+
+  local tmp
+  tmp="$(mktemp "${dest}.tmp.XXXXXX")"
+  if ! install -m 755 "$src" "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! mv -f "$tmp" "$dest"; then
+    rm -f "$tmp"
+    return 1
   fi
 }
 
@@ -109,15 +138,49 @@ echo "  autostart: $([[ "$ENABLE_AUTOSTART" -eq 1 ]] && echo enabled || echo dis
 
 run "mkdir -p \"${INSTALL_DIR}\""
 run "mkdir -p \"${DESKTOP_DIR}\" \"${APPS_DIR}\" \"${AUTOSTART_DIR}\""
+run "mkdir -p \"${CONFIG_DIR}\""
 
 # Copy binaries and assets into stable on-device paths.
-run "cp \"${SOURCE_DIR}/kiosk\" \"${INSTALL_DIR}/kiosk\""
-run "cp \"${SOURCE_DIR}/charades\" \"${INSTALL_DIR}/charades\""
-run "cp \"${SOURCE_DIR}/pictionary\" \"${INSTALL_DIR}/pictionary\""
-run "rm -rf \"${INSTALL_DIR}/charades-assets\" \"${INSTALL_DIR}/pictionary-assets\""
+install_executable "${SOURCE_DIR}/kiosk" "${INSTALL_DIR}/kiosk"
+install_executable "${SOURCE_DIR}/charades" "${INSTALL_DIR}/charades"
+install_executable "${SOURCE_DIR}/pictionary" "${INSTALL_DIR}/pictionary"
+install_executable "${SOURCE_DIR}/trivia" "${INSTALL_DIR}/trivia"
+run "rm -rf \"${INSTALL_DIR}/charades-assets\" \"${INSTALL_DIR}/pictionary-assets\" \"${INSTALL_DIR}/trivia-assets\""
 run "cp -R \"${SOURCE_DIR}/charades-assets\" \"${INSTALL_DIR}/charades-assets\""
 run "cp -R \"${SOURCE_DIR}/pictionary-assets\" \"${INSTALL_DIR}/pictionary-assets\""
-run "chmod +x \"${INSTALL_DIR}/kiosk\" \"${INSTALL_DIR}/charades\" \"${INSTALL_DIR}/pictionary\""
+run "cp -R \"${SOURCE_DIR}/trivia-assets\" \"${INSTALL_DIR}/trivia-assets\""
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  cat <<EOF
+[dry-run] write launcher script at ${LAUNCHER}
+[dry-run] chmod +x ${LAUNCHER}
+EOF
+else
+  cat > "${LAUNCHER}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+ENV_FILE="${ENV_FILE}"
+if [[ -f "\$ENV_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "\$ENV_FILE"
+fi
+exec "${INSTALL_DIR}/kiosk" "\$@"
+EOF
+  chmod +x "${LAUNCHER}"
+fi
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "[dry-run] create ${ENV_FILE} template (if missing) with 0600 permissions"
+else
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    cat > "${ENV_FILE}" <<'EOF'
+# Set your Gemini API key for Trivia mode.
+# Keep this file private: chmod 600 ~/.config/games-kiosk/trivia.env
+export GOOGLE_API_KEY=""
+EOF
+  fi
+  chmod 600 "${ENV_FILE}"
+fi
 
 TMP_DESKTOP="$(mktemp)"
 cleanup() {
@@ -125,7 +188,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-sed "s|^Exec=.*$|Exec=${INSTALL_DIR}/kiosk|" "${SOURCE_DIR}/kiosk.desktop" > "$TMP_DESKTOP"
+sed "s|^Exec=.*$|Exec=${LAUNCHER}|" "${SOURCE_DIR}/kiosk.desktop" > "$TMP_DESKTOP"
 
 run "cp \"$TMP_DESKTOP\" \"${DESKTOP_DIR}/kiosk.desktop\""
 run "cp \"$TMP_DESKTOP\" \"${APPS_DIR}/kiosk.desktop\""
@@ -151,3 +214,4 @@ if [[ "$ENABLE_AUTOSTART" -eq 1 ]]; then
 else
   echo "Autostart: disabled"
 fi
+echo "Trivia env file: ${ENV_FILE} (chmod 600)"
