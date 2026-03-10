@@ -74,7 +74,7 @@ This creates `dist/pi-bundle/` containing:
 - `pictionary`
 - `charades-assets/`
 - `pictionary-assets/`
-- `charades.desktop`
+- `kiosk.desktop`
 
 Move `dist/pi-bundle/` to your Pi by any local method (USB drive, Samba share, local copy).
 

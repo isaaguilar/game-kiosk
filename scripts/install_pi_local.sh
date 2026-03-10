@@ -19,7 +19,7 @@ Expected source-dir layout:
   pictionary
   charades-assets/
   pictionary-assets/
-  charades.desktop
+  kiosk.desktop
 USAGE
 }
 
@@ -70,7 +70,7 @@ required_files=(
   "${SOURCE_DIR}/kiosk"
   "${SOURCE_DIR}/charades"
   "${SOURCE_DIR}/pictionary"
-  "${SOURCE_DIR}/charades.desktop"
+  "${SOURCE_DIR}/kiosk.desktop"
 )
 required_dirs=(
   "${SOURCE_DIR}/charades-assets"
@@ -125,7 +125,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-sed "s|^Exec=.*$|Exec=${INSTALL_DIR}/kiosk|" "${SOURCE_DIR}/charades.desktop" > "$TMP_DESKTOP"
+sed "s|^Exec=.*$|Exec=${INSTALL_DIR}/kiosk|" "${SOURCE_DIR}/kiosk.desktop" > "$TMP_DESKTOP"
 
 run "cp \"$TMP_DESKTOP\" \"${DESKTOP_DIR}/kiosk.desktop\""
 run "cp \"$TMP_DESKTOP\" \"${APPS_DIR}/kiosk.desktop\""

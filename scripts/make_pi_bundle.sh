@@ -74,7 +74,7 @@ cp "${BIN_DIR}/pictionary" "${OUTPUT_DIR}/pictionary"
 rm -rf "${OUTPUT_DIR}/charades-assets" "${OUTPUT_DIR}/pictionary-assets"
 cp -R "${REPO_ROOT}/charades/assets" "${OUTPUT_DIR}/charades-assets"
 cp -R "${REPO_ROOT}/pictionary/assets" "${OUTPUT_DIR}/pictionary-assets"
-cp "${REPO_ROOT}/charades.desktop" "${OUTPUT_DIR}/charades.desktop"
+cp "${REPO_ROOT}/kiosk.desktop" "${OUTPUT_DIR}/kiosk.desktop"
 
 chmod +x "${OUTPUT_DIR}/kiosk" "${OUTPUT_DIR}/charades" "${OUTPUT_DIR}/pictionary"
 
