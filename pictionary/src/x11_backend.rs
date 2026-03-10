@@ -137,46 +137,6 @@ impl X11Backend {
         );
     }
 
-    /// Release global grabs before spawning a child game so the child can grab input.
-    pub fn release_input_grabs(&mut self) {
-        let _ = self.conn.ungrab_keyboard(0u32);
-        if self.pointer_grabbed {
-            let _ = self.conn.ungrab_pointer(0u32);
-            self.pointer_grabbed = false;
-        }
-        let _ = self.conn.flush();
-    }
-
-    /// Reacquire kiosk input grabs after a child game exits.
-    pub fn reacquire_input_grabs(&mut self) {
-        let _ = self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.win, 0u32);
-
-        let _ = self
-            .conn
-            .grab_keyboard(true, self.win, 0u32, GrabMode::ASYNC, GrabMode::ASYNC);
-
-        if !self.pointer_grabbed {
-            if let Ok(cookie) = self.conn.grab_pointer(
-                false,
-                self.win,
-                EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE | EventMask::POINTER_MOTION,
-                GrabMode::ASYNC,
-                GrabMode::ASYNC,
-                self.win,
-                self.hidden_cursor,
-                0u32,
-            ) {
-                if let Ok(reply) = cookie.reply() {
-                    if reply.status == GrabStatus::SUCCESS {
-                        self.pointer_grabbed = true;
-                    }
-                }
-            }
-        }
-
-        let _ = self.conn.flush();
-    }
-
     /// Write our 0x00RRGGBB pixel buffer to the X11 window via PutImage.
     pub fn present(&self, buf: &[u32]) {
         let w = self.width;

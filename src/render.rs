@@ -1,14 +1,16 @@
-use fontdue::{Font, FontSettings, layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle, HorizontalAlign, VerticalAlign}};
 use crate::app::{AppState, MENU_ITEMS};
+use fontdue::{
+    layout::{CoordinateSystem, HorizontalAlign, Layout, LayoutSettings, TextStyle, VerticalAlign},
+    Font, FontSettings,
+};
 
-// ── Palette ──────────────────────────────────────────────────────────────────
+const WHITE: u32 = 0x00_FF_F3_D9;
+const GOLD: u32 = 0x00_F4_C9_5D;
+const TEAL: u32 = 0x00_4D_B4_AA;
+const NAVY: u32 = 0x00_12_2B_44;
+const DUSK: u32 = 0x00_0B_18_2A;
 
-const BLACK: u32 = 0x00_00_00_00;
-const WHITE: u32 = 0x00_FF_FF_FF;
-
-// ── Font ─────────────────────────────────────────────────────────────────────
-
-static FONT_BYTES: &[u8] = include_bytes!("../assets/font.ttf");
+static FONT_BYTES: &[u8] = include_bytes!("../charades/assets/font.ttf");
 
 pub struct Renderer {
     pub width: usize,
@@ -20,86 +22,143 @@ impl Renderer {
     pub fn new(width: usize, height: usize) -> Self {
         let font = Font::from_bytes(FONT_BYTES, FontSettings::default())
             .expect("failed to load bundled font");
-        Self { width, height, font }
+        Self {
+            width,
+            height,
+            font,
+        }
     }
 
-    /// Render the current app state into the pixel buffer.
     pub fn draw(&self, buf: &mut Vec<u32>, state: &AppState) {
-        // Clear to black
-        buf.iter_mut().for_each(|p| *p = BLACK);
+        self.fill_gradient(buf, DUSK, NAVY);
+        self.draw_glow(buf);
 
         match state {
-            AppState::Menu { selected } => self.draw_menu(buf, *selected),
-            AppState::Playing { current_prompt, difficulty, .. } => {
-                self.draw_playing(buf, current_prompt, difficulty.label());
+            AppState::GameSelect { selected } => self.draw_menu(buf, *selected),
+            AppState::QuitPrompt { .. } => {
+                self.draw_menu(buf, state.current_selection());
+                self.draw_quit_prompt(buf);
             }
+            AppState::LaunchGame { .. } => self.draw_transition(buf),
         }
     }
-
-    // ── Menu ─────────────────────────────────────────────────────────────────
 
     fn draw_menu(&self, buf: &mut Vec<u32>, selected: usize) {
-        let title = "CHARADES";
-        let title_size = 72.0_f32;
-        let item_size = 48.0_f32;
         let cx = self.width / 2;
+        self.draw_text_centered(buf, "GAME KIOSK", 78.0, cx, self.height / 6, WHITE);
+        self.draw_text_centered(
+            buf,
+            "Tap in. Play. Escape returns here.",
+            24.0,
+            cx,
+            self.height / 6 + 54,
+            TEAL,
+        );
 
-        // Title
-        let title_y = self.height / 5;
-        self.draw_text_centered(buf, title, title_size, cx, title_y, WHITE);
-
-        // Menu items — spread evenly in the lower 60% of screen
-        let item_count = MENU_ITEMS.len();
+        let item_size = 56.0_f32;
         let area_top = self.height * 2 / 5;
         let area_bottom = self.height * 9 / 10;
-        let step = (area_bottom - area_top) / (item_count + 1);
+        let step = (area_bottom - area_top) / (MENU_ITEMS.len() + 1);
 
         for (i, item) in MENU_ITEMS.iter().enumerate() {
-            let item_y = area_top + step * (i + 1);
-            self.draw_text_centered(buf, item.label(), item_size, cx, item_y, WHITE);
-
+            let y = area_top + step * (i + 1);
+            let color = if i == selected { GOLD } else { WHITE };
+            self.draw_text_centered(buf, item.label(), item_size, cx, y, color);
             if i == selected {
-                // Draw outline box around selected item
                 let (tw, th) = self.measure_text(item.label(), item_size);
-                let pad_x = 24_usize;
-                let pad_y = 12_usize;
+                let pad_x = 30usize;
+                let pad_y = 14usize;
                 let x0 = cx.saturating_sub(tw / 2 + pad_x);
-                let y0 = item_y.saturating_sub(th / 2 + pad_y);
+                let y0 = y.saturating_sub(th / 2 + pad_y);
                 let x1 = (cx + tw / 2 + pad_x).min(self.width - 1);
-                let y1 = (item_y + th / 2 + pad_y).min(self.height - 1);
-                self.draw_rect_outline(buf, x0, y0, x1, y1, WHITE);
+                let y1 = (y + th / 2 + pad_y).min(self.height - 1);
+                self.draw_rect_outline(buf, x0, y0, x1, y1, GOLD);
             }
         }
 
-        // Footer hint
-        let hint = "↑↓ select   Enter/Space start   Esc quit";
-        self.draw_text_centered(buf, hint, 18.0, cx, self.height - 24, WHITE);
+        self.draw_text_centered(
+            buf,
+            "UP/DOWN choose   ENTER launch   ESC quit prompt",
+            18.0,
+            cx,
+            self.height - 24,
+            WHITE,
+        );
     }
 
-    // ── Playing ──────────────────────────────────────────────────────────────
-
-    fn draw_playing(&self, buf: &mut Vec<u32>, prompt: &str, difficulty_label: &str) {
+    fn draw_quit_prompt(&self, buf: &mut Vec<u32>) {
         let cx = self.width / 2;
         let cy = self.height / 2;
-        let margin_x = (self.width as f32 * 0.06) as usize;
-        let max_w = self.width - 2 * margin_x;
-        let max_h = (self.height as f32 * 0.55) as usize;
+        let w = self.width * 2 / 3;
+        let h = self.height / 3;
+        let x0 = cx.saturating_sub(w / 2);
+        let y0 = cy.saturating_sub(h / 2);
+        let x1 = (x0 + w).min(self.width - 1);
+        let y1 = (y0 + h).min(self.height - 1);
 
-        // Find the largest font size that fits in one line
-        let font_size = self.fit_font_size(prompt, max_w, max_h, 14.0, 200.0);
-        self.draw_text_centered(buf, prompt, font_size, cx, cy, WHITE);
-
-        // Difficulty label top-left
-        self.draw_text_centered(buf, difficulty_label, 22.0, 60, 22, WHITE);
-
-        // Footer hint
-        let hint = "Enter/Space next   Esc menu";
-        self.draw_text_centered(buf, hint, 18.0, cx, self.height - 24, WHITE);
+        self.fill_rect(buf, x0, y0, x1, y1, 0x00_0A_12_1E);
+        self.draw_rect_outline(buf, x0, y0, x1, y1, GOLD);
+        self.draw_text_centered(buf, "Quit Kiosk?", 44.0, cx, cy - 34, WHITE);
+        self.draw_text_centered(buf, "ENTER exits   ESC returns", 24.0, cx, cy + 24, TEAL);
     }
 
-    // ── Text helpers ─────────────────────────────────────────────────────────
+    fn draw_transition(&self, buf: &mut Vec<u32>) {
+        let cx = self.width / 2;
+        let cy = self.height / 2;
+        self.draw_text_centered(buf, "Launching...", 38.0, cx, cy, GOLD);
+    }
 
-    /// Return (width_px, height_px) for a string at a given font size.
+    fn fill_gradient(&self, buf: &mut [u32], top: u32, bottom: u32) {
+        let (tr, tg, tb) = ((top >> 16) & 0xFF, (top >> 8) & 0xFF, top & 0xFF);
+        let (br, bg, bb) = (
+            (bottom >> 16) & 0xFF,
+            (bottom >> 8) & 0xFF,
+            bottom & 0xFF,
+        );
+        for y in 0..self.height {
+            let t = y as u32 * 255 / (self.height.max(1) as u32);
+            let r = (tr * (255 - t) + br * t) / 255;
+            let g = (tg * (255 - t) + bg * t) / 255;
+            let b = (tb * (255 - t) + bb * t) / 255;
+            let color = (r << 16) | (g << 8) | b;
+            let row = y * self.width;
+            for x in 0..self.width {
+                buf[row + x] = color;
+            }
+        }
+    }
+
+    fn draw_glow(&self, buf: &mut [u32]) {
+        let center_x = (self.width as i32) / 5;
+        let center_y = (self.height as i32) / 4;
+        let radius = (self.width.min(self.height) as i32) / 3;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let dx = x as i32 - center_x;
+                let dy = y as i32 - center_y;
+                let d2 = dx * dx + dy * dy;
+                if d2 > radius * radius {
+                    continue;
+                }
+                let strength = ((radius * radius - d2) as u32 * 70) / (radius * radius) as u32;
+                let idx = y * self.width + x;
+                let base = buf[idx];
+                let r = ((base >> 16) & 0xFF).saturating_add((strength * 77) / 255);
+                let g = ((base >> 8) & 0xFF).saturating_add((strength * 180) / 255);
+                let b = (base & 0xFF).saturating_add((strength * 170) / 255);
+                buf[idx] = (r.min(255) << 16) | (g.min(255) << 8) | b.min(255);
+            }
+        }
+    }
+
+    fn fill_rect(&self, buf: &mut [u32], x0: usize, y0: usize, x1: usize, y1: usize, color: u32) {
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                buf[y * self.width + x] = color;
+            }
+        }
+    }
+
     fn measure_text(&self, text: &str, size: f32) -> (usize, usize) {
         let mut layout: Layout = Layout::new(CoordinateSystem::PositiveYDown);
         layout.reset(&LayoutSettings {
@@ -115,29 +174,16 @@ impl Renderer {
             return (0, size as usize);
         }
         let min_x = glyphs.iter().map(|g| g.x as i32).min().unwrap_or(0);
-        let max_x = glyphs.iter().map(|g| (g.x + g.width as f32) as i32).max().unwrap_or(0);
+        let max_x = glyphs
+            .iter()
+            .map(|g| (g.x + g.width as f32) as i32)
+            .max()
+            .unwrap_or(0);
         let height = layout.height() as usize;
         let width = (max_x - min_x).unsigned_abs() as usize;
         (width, height)
     }
 
-    /// Binary-search for the largest font size where text fits within max_w × max_h.
-    fn fit_font_size(&self, text: &str, max_w: usize, max_h: usize, min: f32, max: f32) -> f32 {
-        let mut lo = min;
-        let mut hi = max;
-        for _ in 0..16 {
-            let mid = (lo + hi) / 2.0;
-            let (w, h) = self.measure_text(text, mid);
-            if w <= max_w && h <= max_h {
-                lo = mid;
-            } else {
-                hi = mid;
-            }
-        }
-        lo
-    }
-
-    /// Draw text at the given pixel size, centered at (cx, cy).
     pub fn draw_text_centered(
         &self,
         buf: &mut Vec<u32>,
@@ -162,9 +208,12 @@ impl Renderer {
             return;
         }
 
-        // Compute bounding box to center the whole run
         let min_gx = glyphs.iter().map(|g| g.x as i32).min().unwrap_or(0);
-        let max_gx = glyphs.iter().map(|g| (g.x + g.width as f32) as i32).max().unwrap_or(0);
+        let max_gx = glyphs
+            .iter()
+            .map(|g| (g.x + g.width as f32) as i32)
+            .max()
+            .unwrap_or(0);
         let total_w = (max_gx - min_gx).unsigned_abs() as i32;
         let total_h = layout.height() as i32;
 
@@ -196,7 +245,6 @@ impl Renderer {
                         continue;
                     }
                     let idx = py * self.width + px;
-                    // Alpha blend onto black
                     let r = ((color >> 16) & 0xFF) * alpha / 255;
                     let g = ((color >> 8) & 0xFF) * alpha / 255;
                     let b = (color & 0xFF) * alpha / 255;
@@ -206,9 +254,15 @@ impl Renderer {
         }
     }
 
-    /// Draw a 1-pixel-thick axis-aligned rectangle outline.
-    fn draw_rect_outline(&self, buf: &mut Vec<u32>, x0: usize, y0: usize, x1: usize, y1: usize, color: u32) {
-        // Top and bottom edges
+    fn draw_rect_outline(
+        &self,
+        buf: &mut [u32],
+        x0: usize,
+        y0: usize,
+        x1: usize,
+        y1: usize,
+        color: u32,
+    ) {
         for x in x0..=x1 {
             if y0 < self.height {
                 buf[y0 * self.width + x] = color;
@@ -217,7 +271,6 @@ impl Renderer {
                 buf[y1 * self.width + x] = color;
             }
         }
-        // Left and right edges
         for y in y0..=y1 {
             if y < self.height {
                 if x0 < self.width {

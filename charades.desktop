@@ -1,9 +1,9 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Charades
-Comment=Fullscreen charades word prompt game
-Exec=/home/pi/charades
+Name=Game Kiosk
+Comment=Fullscreen game kiosk home screen
+Exec=/home/pi/kiosk
 Icon=applications-games
 Terminal=false
 Categories=Game;

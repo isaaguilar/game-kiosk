@@ -1,11 +1,13 @@
+[workspace]
+members = ["charades", "pictionary"]
+
 [package]
-name = "charades"
+name = "kiosk"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 fontdue = "0.9"
-rand = "0.10.0"
 
 # Linux (Pi): direct framebuffer + evdev OR pure-Rust X11 — zero shared-library deps
 [target.'cfg(target_os = "linux")'.dependencies]

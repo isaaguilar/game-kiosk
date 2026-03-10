@@ -1,6 +1,7 @@
 mod app;
 mod input;
 mod render;
+mod words;
 
 #[cfg(target_os = "linux")]
 mod fb;
@@ -8,8 +9,6 @@ mod fb;
 mod kbd;
 #[cfg(target_os = "linux")]
 mod x11_backend;
-
-use app::GameSelection;
 
 #[cfg(target_os = "linux")]
 fn run_best_effort(command: &str, args: &[&str]) -> bool {
@@ -22,16 +21,20 @@ fn run_best_effort(command: &str, args: &[&str]) -> bool {
 
 #[cfg(target_os = "linux")]
 fn configure_keep_awake_for_x11() {
+    // Disable X11 screensaver, DPMS, and screen blanking for kiosk sessions.
     let ok = run_best_effort("xset", &["s", "off"])
         && run_best_effort("xset", &["-dpms"])
         && run_best_effort("xset", &["s", "noblank"]);
     if !ok {
-        eprintln!("warning: could not fully disable X11 sleep/blanking");
+        eprintln!(
+            "warning: could not fully disable X11 sleep/blanking (xset unavailable or denied)"
+        );
     }
 }
 
 #[cfg(target_os = "linux")]
 fn configure_keep_awake_for_tty() {
+    // Disable kernel console blanking when running directly on framebuffer/TTY.
     let ok = std::process::Command::new("sh")
         .args([
             "-c",
@@ -41,7 +44,9 @@ fn configure_keep_awake_for_tty() {
         .map(|s| s.success())
         .unwrap_or(false);
     if !ok {
-        eprintln!("warning: could not disable TTY blanking");
+        eprintln!(
+            "warning: could not disable TTY blanking (setterm unavailable or permission denied)"
+        );
     }
 }
 
@@ -53,41 +58,9 @@ fn main() {
     desktop_main();
 }
 
-fn launch_game(game: GameSelection) {
-    let bin = find_game_binary(game).unwrap_or_else(|| game.bin_name().to_string());
-    let status = std::process::Command::new(&bin).status();
-    match status {
-        Ok(s) if s.success() => {}
-        Ok(s) => eprintln!("{} exited with status: {}", game.label(), s),
-        Err(err) => {
-        eprintln!(
-            "failed to launch {} ({}): {err}",
-            game.label(),
-            bin
-        );
-        }
-    }
-}
-
-fn find_game_binary(game: GameSelection) -> Option<String> {
-    let exe = std::env::current_exe().ok()?;
-    let exe_dir = exe.parent()?;
-    let name = game.bin_name();
-
-    let candidates = [
-        exe_dir.join(name),
-        exe_dir.join("..").join(name),
-        exe_dir.join("..").join("..").join(name),
-    ];
-
-    for path in &candidates {
-        if path.exists() {
-            return Some(path.to_string_lossy().to_string());
-        }
-    }
-
-    None
-}
+// ── Linux ─────────────────────────────────────────────────────────────────────
+// If DISPLAY is set (Pi OS desktop session) → use pure-Rust X11 backend.
+// Otherwise (raw TTY / CLI) → use direct framebuffer + evdev.
 
 #[cfg(target_os = "linux")]
 fn linux_main() {
@@ -104,6 +77,8 @@ fn linux_main() {
     fb_main();
 }
 
+// ── X11 path (desktop / double-click) ─────────────────────────────────────────
+
 #[cfg(target_os = "linux")]
 fn x11_main() -> Result<(), Box<dyn std::error::Error>> {
     use app::AppState;
@@ -112,13 +87,13 @@ fn x11_main() -> Result<(), Box<dyn std::error::Error>> {
     use std::time::{Duration, Instant};
     use x11_backend::X11Backend;
 
-    let mut x11 = X11Backend::new()?;
+    let x11 = X11Backend::new()?;
     configure_keep_awake_for_x11();
-    let mut last_keep_awake = Instant::now();
 
     let mut state = AppState::initial();
     let renderer = Renderer::new(x11.width, x11.height);
     let mut buf = vec![0u32; x11.width * x11.height];
+
     let frame = Duration::from_millis(16);
 
     loop {
@@ -126,39 +101,16 @@ fn x11_main() -> Result<(), Box<dyn std::error::Error>> {
 
         let keys = match x11.poll_keys() {
             Some(k) => k,
-            None => break,
+            None => break, // X connection closed
         };
-
         match handle_keys(&keys, &mut state) {
             Action::Quit => break,
-            Action::Launch => {
-                if let AppState::LaunchGame { game, selected } = state {
-                    renderer.draw(&mut buf, &AppState::LaunchGame { game, selected });
-                    x11.raise();
-                    x11.present(&buf);
-
-                    // Let child game own input grabs while it runs.
-                    x11.release_input_grabs();
-                    launch_game(game);
-
-                    // Regain kiosk focus and grabs after child exits.
-                    x11.reacquire_input_grabs();
-                    configure_keep_awake_for_x11();
-                    last_keep_awake = Instant::now();
-                    state.restore_selection(selected);
-                }
-            }
             Action::None => {}
         }
 
         renderer.draw(&mut buf, &state);
         x11.raise();
         x11.present(&buf);
-
-        if last_keep_awake.elapsed() >= Duration::from_secs(30) {
-            configure_keep_awake_for_x11();
-            last_keep_awake = Instant::now();
-        }
 
         let elapsed = t0.elapsed();
         if elapsed < frame {
@@ -168,6 +120,8 @@ fn x11_main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+// ── Framebuffer path (TTY / no desktop) ──────────────────────────────────────
 
 #[cfg(target_os = "linux")]
 fn fb_main() {
@@ -192,7 +146,6 @@ fn fb_main() {
     configure_keep_awake_for_tty();
 
     let frame = Duration::from_millis(16);
-    let mut last_keep_awake = Instant::now();
 
     loop {
         let t0 = Instant::now();
@@ -200,26 +153,11 @@ fn fb_main() {
         let keys = kbd.poll();
         match handle_keys(&keys, &mut state) {
             Action::Quit => break,
-            Action::Launch => {
-                if let AppState::LaunchGame { game, selected } = state {
-                    renderer.draw(&mut buf, &AppState::LaunchGame { game, selected });
-                    fb.present(&buf);
-                    launch_game(game);
-                    configure_keep_awake_for_tty();
-                    last_keep_awake = Instant::now();
-                    state.restore_selection(selected);
-                }
-            }
             Action::None => {}
         }
 
         renderer.draw(&mut buf, &state);
         fb.present(&buf);
-
-        if last_keep_awake.elapsed() >= Duration::from_secs(30) {
-            configure_keep_awake_for_tty();
-            last_keep_awake = Instant::now();
-        }
 
         let elapsed = t0.elapsed();
         if elapsed < frame {
@@ -229,6 +167,8 @@ fn fb_main() {
 
     Framebuffer::show_cursor();
 }
+
+// ── macOS / desktop: minifb window for local smoke-testing ───────────────────
 
 #[cfg(not(target_os = "linux"))]
 fn desktop_main() {
@@ -245,7 +185,7 @@ fn desktop_main() {
     let mut buf = vec![0u32; W * H];
 
     let mut window = Window::new(
-        "Kiosk",
+        "Pictionary",
         W,
         H,
         WindowOptions {
@@ -269,14 +209,6 @@ fn desktop_main() {
 
         match handle_keys(&keys, &mut state) {
             Action::Quit => break,
-            Action::Launch => {
-                if let AppState::LaunchGame { game, selected } = state {
-                    renderer.draw(&mut buf, &AppState::LaunchGame { game, selected });
-                    let _ = window.update_with_buffer(&buf, W, H);
-                    launch_game(game);
-                    state.restore_selection(selected);
-                }
-            }
             Action::None => {}
         }
 

@@ -1,8 +1,34 @@
-# Charades RPi Kiosk
+# Game Kiosk Workspace
 
-A fullscreen keyboard-driven charades prompt app for Raspberry Pi 4.
+A fullscreen Raspberry Pi kiosk workspace with three Rust binaries:
+
+- `kiosk` (root package): home screen and game selector
+- `charades` (member crate): difficulty-based word prompt game
+- `pictionary` (member crate): single-list word prompt game (`start.txt`)
+
+All apps are keyboard-driven and use the same no-sleep behavior for kiosk environments.
+
+## Workspace Layout
+
+- `Cargo.toml` -> workspace + `kiosk` package
+- `src/` -> root kiosk app
+- `charades/` -> charades crate (`charades/src`, `charades/assets`)
+- `pictionary/` -> pictionary crate (`pictionary/src`, `pictionary/assets`)
 
 ## Controls
+
+### Kiosk
+
+| Key | Behavior |
+|---|---|
+| ↑ / W | Select previous game |
+| ↓ / S | Select next game |
+| Enter / Space | Launch selected game |
+| Esc / Q / Backspace | Open quit prompt |
+| Esc (in quit prompt) | Return to selection |
+| Enter (in quit prompt) | Quit kiosk |
+
+### Charades
 
 | Key | Menu | Playing |
 |---|---|---|
@@ -11,113 +37,114 @@ A fullscreen keyboard-driven charades prompt app for Raspberry Pi 4.
 | Enter / Space | Start round | Next prompt |
 | Esc / Q / Backspace | Quit app | Return to menu |
 
-## Difficulties
+### Pictionary
 
-| Level | Source |
-|---|---|
-| Easy | `assets/easy.txt` |
-| Medium | `assets/medium.txt` |
-| Hard | `assets/hard.txt` |
+| Key | Menu | Playing |
+|---|---|---|
+| Enter / Space | Start round | Next prompt |
+| Esc / Q / Backspace | Quit app | Return to menu |
 
-Prompts are drawn in a shuffled random order. When the pool is exhausted it reshuffles automatically and continues indefinitely.
-The app reads these files at runtime relative to the binary path (`<binary_dir>/assets/...`), so you can edit words without recompiling.
+## Word Lists
 
-## Building
+- `charades/assets/easy.txt`
+- `charades/assets/medium.txt`
+- `charades/assets/hard.txt`
+- `pictionary/assets/start.txt`
 
-### Local smoke-test (macOS — uses a minifb window)
+Prompts are loaded at runtime and reshuffled indefinitely.
+
+## Run Locally (macOS smoke test)
 
 ```bash
-cargo r
+cargo run -p kiosk
+cargo run -p charades
+cargo run -p pictionary
 ```
 
-### Raspberry Pi 4 (recommended) — GNU build
-
-If you're deploying to Raspberry Pi OS Desktop, `aarch64-unknown-linux-gnu` is the most practical default.
-It links against glibc on the Pi, which is already present on standard Pi OS images.
+## Build Pi Bundle (Dev Machine)
 
 ```bash
-# Add target
+./scripts/make_pi_bundle.sh
+```
+
+This creates `dist/pi-bundle/` containing:
+
+- `kiosk`
+- `charades`
+- `pictionary`
+- `charades-assets/`
+- `pictionary-assets/`
+- `charades.desktop`
+
+Move `dist/pi-bundle/` to your Pi by any local method (USB drive, Samba share, local copy).
+
+## Install On Pi (No SSH/SCP)
+
+```bash
+./scripts/install_pi_local.sh --source-dir /path/to/pi-bundle
+```
+
+Defaults:
+
+- install dir: `~/.local/games-kiosk`
+- autostart: enabled
+
+Optional flags:
+
+```bash
+./scripts/install_pi_local.sh --source-dir /path/to/pi-bundle --no-autostart
+./scripts/install_pi_local.sh --source-dir /path/to/pi-bundle --install-dir ~/games-kiosk
+./scripts/install_pi_local.sh --source-dir /path/to/pi-bundle --dry-run
+```
+
+## Automated Remote Install (From Dev Machine)
+
+If you want bundle + copy + install in one command from your computer:
+
+```bash
+./scripts/deploy_pi_remote.sh --host raspberrypi.local --user pi
+```
+
+This script will:
+
+- build/update `dist/pi-bundle/`
+- upload the bundle to the Pi via `scp`
+- upload `install_pi_local.sh`
+- run the installer over `ssh`
+
+You can disable autostart during remote install:
+
+```bash
+./scripts/deploy_pi_remote.sh --host raspberrypi.local --user pi --no-autostart
+```
+
+If SSH keys are not configured, `scp`/`ssh` will prompt for password automatically.
+
+## Build for Raspberry Pi 4 (Manual)
+
+If you still want a direct manual build:
+
+```bash
 rustup target add aarch64-unknown-linux-gnu
-
-# Build
-cargo build --release --target aarch64-unknown-linux-gnu
+cargo build --workspace --release --target aarch64-unknown-linux-gnu
 ```
 
-The Pi binary lives at:
-```
-target/aarch64-unknown-linux-gnu/release/charades
-```
+## Runtime Behavior
 
-## Deploying to Pi
+- Desktop session (`DISPLAY` set): fullscreen X11 path
+- TTY/no desktop: framebuffer path (`/dev/fb0`)
 
-Copy the binary, the `assets` folder, and the `.desktop` launcher:
-```bash
-user=pi
-rpi_ip=1.2.3.4
-scp target/aarch64-unknown-linux-gnu/release/charades $user@$rpi_ip:~/
-scp -r assets $user@$rpi_ip:~/
-tmpfile=$(mktemp)
-sed "s/pi/$user/" charades.desktop > $tmpfile
-scp $tmpfile $user@$rpi_ip:~/Desktop/charades.desktop
-ssh $user@$rpi_ip chmod +x ~/Desktop/charades.desktop
-```
+All apps attempt to disable sleep/blanking at startup:
 
-## Running on the Pi
+- X11: `xset s off`, `xset -dpms`, `xset s noblank`
+- TTY: `setterm -blank 0 -powerdown 0 -powersave off`
 
-The binary auto-detects its environment at startup:
-- **Desktop session** (`DISPLAY` is set) → opens a fullscreen X11 window that **covers the taskbar**, hides the cursor
-- **TTY / CLI** (no `DISPLAY`) → writes directly to `/dev/fb0`
+## Permissions
 
-At startup, the app also attempts to prevent sleep/blanking:
-- On X11 desktop: runs `xset s off`, `xset -dpms`, `xset s noblank`
-- On TTY framebuffer: runs `setterm -blank 0 -powerdown 0 -powersave off`
+If TTY mode cannot access `/dev/fb0` or `/dev/input/event*`:
 
-These are best-effort calls. If unavailable or blocked by permissions/session policy, the app continues and prints a warning.
-
-### From Pi OS Desktop — double-click to launch
-
-Double-click the `charades` icon on the Desktop.  
-PCManFM will ask "Execute" or "Open" the first time — choose **Execute**.
-
-The app opens fullscreen, covering the taskbar entirely, with the cursor hidden.
-
-### From a TTY (kiosk / no desktop)
-
-```bash
-./charades
-```
-
-### Permissions
-
-If you get a "permission denied" error on `/dev/fb0` or `/dev/input/event*` (TTY mode only):
 ```bash
 sudo usermod -aG video,input pi
-# then log out and back in
 ```
 
-## Autostart on desktop login (optional)
-
-Add `charades.desktop` to autostart:
-```bash
-mkdir -p ~/.config/autostart
-cp ~/Desktop/charades.desktop ~/.config/autostart/
-```
-
-Or for a headless systemd boot with X:
-```ini
-# /etc/systemd/system/charades.service
-[Unit]
-Description=Charades Kiosk
-After=graphical-session.target
-
-[Service]
-User=pi
-Environment=DISPLAY=:0
-ExecStart=/home/pi/charades
-Restart=always
-
-[Install]
-WantedBy=graphical-session.target
-```
-Then: `sudo systemctl enable --now charades`
-
+Then log out and back in.

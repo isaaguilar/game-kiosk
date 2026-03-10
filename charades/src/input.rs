@@ -12,27 +12,22 @@ pub enum AppKey {
 pub enum Action {
     None,
     Quit,
-    Launch,
 }
 
 pub fn handle_keys(keys: &[AppKey], state: &mut AppState) -> Action {
     for &key in keys {
         match state {
-            AppState::GameSelect { .. } => match key {
+            AppState::Menu { .. } => match key {
                 AppKey::Up => state.menu_up(),
                 AppKey::Down => state.menu_down(),
-                AppKey::Confirm => {
-                    state.select_game();
-                    return Action::Launch;
-                }
-                AppKey::Back => state.open_quit_prompt(),
+                AppKey::Confirm => state.start_game(),
+                AppKey::Back => return Action::Quit,
             },
-            AppState::QuitPrompt { .. } => match key {
-                AppKey::Confirm => return Action::Quit,
-                AppKey::Back => state.close_quit_prompt(),
+            AppState::Playing { .. } => match key {
+                AppKey::Confirm => state.next_prompt(),
+                AppKey::Back => state.back_to_menu(),
                 _ => {}
             },
-            AppState::LaunchGame { .. } => {}
         }
     }
     Action::None

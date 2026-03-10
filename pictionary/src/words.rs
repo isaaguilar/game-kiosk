@@ -3,27 +3,12 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Difficulty {
-    Easy,
-    Medium,
-    Hard,
-}
-
 /// Loads, normalizes, and returns prompts from a string of newline-delimited lines.
 fn parse_prompts(raw: &str) -> Vec<String> {
     raw.lines()
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
         .collect()
-}
-
-fn difficulty_filename(difficulty: Difficulty) -> &'static str {
-    match difficulty {
-        Difficulty::Easy => "easy.txt",
-        Difficulty::Medium => "medium.txt",
-        Difficulty::Hard => "hard.txt",
-    }
 }
 
 fn asset_path_from_exe(filename: &str) -> Result<PathBuf, String> {
@@ -34,6 +19,10 @@ fn asset_path_from_exe(filename: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| "failed to resolve executable directory".to_string())?;
 
     let candidates = [
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets")
+            .join(filename),
+        exe_dir.join("pictionary-assets").join(filename),
         exe_dir.join("assets").join(filename),
         exe_dir.join("..").join("assets").join(filename),
         exe_dir.join("..").join("..").join("assets").join(filename),
@@ -63,21 +52,14 @@ fn asset_path_from_exe(filename: &str) -> Result<PathBuf, String> {
     ))
 }
 
-fn read_prompts_from_asset(path: &Path, difficulty: Difficulty) -> Vec<String> {
-    let raw = fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to load {:?} prompts from {}: {}",
-            difficulty,
-            path.display(),
-            e
-        )
-    });
+fn read_prompts_from_asset(path: &Path) -> Vec<String> {
+    let raw = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to load prompts from {}: {}", path.display(), e));
 
     let prompts = parse_prompts(&raw);
     assert!(
         !prompts.is_empty(),
-        "No prompts loaded for difficulty {:?} from {}",
-        difficulty,
+        "No prompts loaded from {}",
         path.display()
     );
     prompts
@@ -109,15 +91,11 @@ impl WordQueue {
     }
 }
 
-pub fn load_queue(difficulty: Difficulty) -> WordQueue {
-    let filename = difficulty_filename(difficulty);
-    let path = asset_path_from_exe(filename).unwrap_or_else(|e| {
-        panic!(
-            "Failed to resolve asset path for {:?} ({}): {}",
-            difficulty, filename, e
-        )
-    });
-    let pool = read_prompts_from_asset(&path, difficulty);
+pub fn load_queue() -> WordQueue {
+    let filename = "start.txt";
+    let path = asset_path_from_exe(filename)
+        .unwrap_or_else(|e| panic!("Failed to resolve asset path ({}): {}", filename, e));
+    let pool = read_prompts_from_asset(&path);
 
     WordQueue::new(pool)
 }

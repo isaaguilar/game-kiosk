@@ -1,89 +1,83 @@
-use crate::words::{Difficulty, WordQueue, load_queue};
-
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum MenuSelection {
-    Easy,
-    Medium,
-    Hard,
+pub enum GameSelection {
+    Charades,
+    Pictionary,
 }
 
-impl MenuSelection {
+impl GameSelection {
     pub fn label(self) -> &'static str {
         match self {
-            MenuSelection::Easy => "Easy",
-            MenuSelection::Medium => "Medium",
-            MenuSelection::Hard => "Hard",
+            GameSelection::Charades => "Charades",
+            GameSelection::Pictionary => "Pictionary",
         }
     }
 
-    pub fn difficulty(self) -> Difficulty {
+    pub fn bin_name(self) -> &'static str {
         match self {
-            MenuSelection::Easy => Difficulty::Easy,
-            MenuSelection::Medium => Difficulty::Medium,
-            MenuSelection::Hard => Difficulty::Hard,
+            GameSelection::Charades => "charades",
+            GameSelection::Pictionary => "pictionary",
         }
     }
 }
 
-pub const MENU_ITEMS: [MenuSelection; 3] = [
-    MenuSelection::Easy,
-    MenuSelection::Medium,
-    MenuSelection::Hard,
-];
+pub const MENU_ITEMS: [GameSelection; 2] = [GameSelection::Charades, GameSelection::Pictionary];
 
 pub enum AppState {
-    Menu {
-        selected: usize,
-    },
-    Playing {
-        difficulty: MenuSelection,
-        current_prompt: String,
-        queue: WordQueue,
-    },
+    GameSelect { selected: usize },
+    QuitPrompt { selected: usize },
+    LaunchGame { game: GameSelection, selected: usize },
 }
 
 impl AppState {
     pub fn initial() -> Self {
-        AppState::Menu { selected: 0 }
+        AppState::GameSelect { selected: 0 }
     }
 
-    /// Move selection up (wraps).
     pub fn menu_up(&mut self) {
-        if let AppState::Menu { selected } = self {
+        if let AppState::GameSelect { selected } = self {
             *selected = selected.checked_sub(1).unwrap_or(MENU_ITEMS.len() - 1);
         }
     }
 
-    /// Move selection down (wraps).
     pub fn menu_down(&mut self) {
-        if let AppState::Menu { selected } = self {
+        if let AppState::GameSelect { selected } = self {
             *selected = (*selected + 1) % MENU_ITEMS.len();
         }
     }
 
-    /// Start game with currently selected difficulty.
-    pub fn start_game(&mut self) {
-        if let AppState::Menu { selected } = self {
-            let item = MENU_ITEMS[*selected];
-            let mut queue = load_queue(item.difficulty());
-            let first = queue.next();
-            *self = AppState::Playing {
-                difficulty: item,
-                current_prompt: first,
-                queue,
+    pub fn select_game(&mut self) {
+        if let AppState::GameSelect { selected } = self {
+            *self = AppState::LaunchGame {
+                game: MENU_ITEMS[*selected],
+                selected: *selected,
             };
         }
     }
 
-    /// Advance to next prompt while in Playing state.
-    pub fn next_prompt(&mut self) {
-        if let AppState::Playing { current_prompt, queue, .. } = self {
-            *current_prompt = queue.next();
+    pub fn open_quit_prompt(&mut self) {
+        if let AppState::GameSelect { selected } = self {
+            *self = AppState::QuitPrompt {
+                selected: *selected,
+            };
         }
     }
 
-    /// Return to menu.
-    pub fn back_to_menu(&mut self) {
-        *self = AppState::Menu { selected: 0 };
+    pub fn close_quit_prompt(&mut self) {
+        if let AppState::QuitPrompt { selected } = self {
+            *self = AppState::GameSelect {
+                selected: *selected,
+            };
+        }
+    }
+
+    pub fn restore_selection(&mut self, selected: usize) {
+        *self = AppState::GameSelect { selected };
+    }
+
+    pub fn current_selection(&self) -> usize {
+        match self {
+            AppState::GameSelect { selected } | AppState::QuitPrompt { selected } => *selected,
+            AppState::LaunchGame { selected, .. } => *selected,
+        }
     }
 }
