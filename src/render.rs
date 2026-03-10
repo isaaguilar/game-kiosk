@@ -119,11 +119,7 @@ impl Renderer {
 
     fn fill_gradient(&self, buf: &mut [u32], top: u32, bottom: u32) {
         let (tr, tg, tb) = ((top >> 16) & 0xFF, (top >> 8) & 0xFF, top & 0xFF);
-        let (br, bg, bb) = (
-            (bottom >> 16) & 0xFF,
-            (bottom >> 8) & 0xFF,
-            bottom & 0xFF,
-        );
+        let (br, bg, bb) = ((bottom >> 16) & 0xFF, (bottom >> 8) & 0xFF, bottom & 0xFF);
         for y in 0..self.height {
             let t = y as u32 * 255 / (self.height.max(1) as u32);
             let r = (tr * (255 - t) + br * t) / 255;

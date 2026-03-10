@@ -60,11 +60,7 @@ fn launch_game(game: GameSelection) {
         Ok(s) if s.success() => {}
         Ok(s) => eprintln!("{} exited with status: {}", game.label(), s),
         Err(err) => {
-        eprintln!(
-            "failed to launch {} ({}): {err}",
-            game.label(),
-            bin
-        );
+            eprintln!("failed to launch {} ({}): {err}", game.label(), bin);
         }
     }
 }

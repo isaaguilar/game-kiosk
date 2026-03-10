@@ -1,8 +1,8 @@
+use chrono::Local;
+use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
-use reqwest::blocking::Client;
-use chrono::Local;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TriviaItem {
@@ -66,7 +66,12 @@ impl AppState {
 
     pub fn apply_load_result(&mut self, result: Result<Vec<TriviaItem>, String>) {
         match result {
-            Ok(items) => *self = AppState::Ready { items, current_idx: 0 },
+            Ok(items) => {
+                *self = AppState::Ready {
+                    items,
+                    current_idx: 0,
+                }
+            }
             Err(e) => *self = AppState::Error(e),
         }
     }
@@ -84,7 +89,9 @@ impl AppState {
 
     pub fn next_step(&mut self) {
         match self {
-            AppState::Question { items, current_idx, .. } => {
+            AppState::Question {
+                items, current_idx, ..
+            } => {
                 *self = AppState::Answer {
                     items: items.clone(),
                     current_idx: *current_idx,
@@ -136,12 +143,18 @@ fn fetch_trivia() -> Result<Vec<TriviaItem>, String> {
         .map_err(|_| "GOOGLE_API_KEY environment variable is not set. Export it in your shell: export GOOGLE_API_KEY='...'".to_string())?;
 
     let today = Local::now().format("%Y-%m-%d").to_string();
+    let style = "funny 'Wait Wait... Don't Tell Me!'";
+    let subject = format!(
+        "recent news or fun facts from the past week (today is {})",
+        today
+    );
+    let subject = "King James Bible or any derivative of the King James Bible, with a focus on accurate but entertaining content. Include a mix of well-known stories, lesser-known passages, and interesting trivia related to the text. The questions should be phrased in a way that is accessible to a general audience, while still capturing the unique language and style of the KJV. Avoid overly obscure references, but feel free to include some challenging ones for added fun. The goal is to create an engaging and enjoyable trivia experience that celebrates the richness and diversity of the King James Bible, while also providing some educational value and entertainment";
     let prompt = format!(
-        "Generate 5 funny 'Wait Wait... Don't Tell Me!' style trivia questions about recent news or fun facts from the past week (today is {}). \
+        "Generate 5 {} style trivia questions about {}. \
          Each should be a short question and a concise answer. \
          Format the output as a JSON array of objects with 'question' and 'answer' fields. \
          Return ONLY the raw JSON array, no other text or markdown formatting.",
-        today
+        style, subject
     );
 
     let url = format!(
@@ -187,8 +200,12 @@ fn fetch_trivia() -> Result<Vec<TriviaItem>, String> {
         .ok_or("No text in response part")?;
     let text = &part.text;
 
-    let start = text.find('[').ok_or_else(|| format!("No JSON array found in response: {}", text))?;
-    let end = text.rfind(']').ok_or_else(|| format!("No JSON array found in response: {}", text))?;
+    let start = text
+        .find('[')
+        .ok_or_else(|| format!("No JSON array found in response: {}", text))?;
+    let end = text
+        .rfind(']')
+        .ok_or_else(|| format!("No JSON array found in response: {}", text))?;
     if end <= start {
         return Err(format!("No JSON array found in response: {}", text));
     }
