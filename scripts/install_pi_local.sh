@@ -177,6 +177,8 @@ else
 # Set your Gemini API key for Trivia mode.
 # Keep this file private: chmod 600 ~/.config/games-kiosk/trivia.env
 export GOOGLE_API_KEY=""
+# Required for Recent News subject (used to fetch reputable headlines).
+export NEWS_API_KEY=""
 EOF
   fi
   chmod 600 "${ENV_FILE}"

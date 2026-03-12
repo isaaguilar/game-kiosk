@@ -16,13 +16,32 @@ pub enum Action {
 pub fn handle_keys(keys: &[AppKey], state: &mut AppState) -> Action {
     for &key in keys {
         match state {
-            AppState::Loading { .. } => match key {
+            AppState::SubjectMenu { .. } => match key {
+                AppKey::Up => state.move_menu_up(),
+                AppKey::Down => state.move_menu_down(),
+                AppKey::Confirm => state.confirm_menu_selection(),
                 AppKey::Back => return Action::Quit,
+            },
+            AppState::NewsCategoryMenu { .. } => match key {
+                AppKey::Up => state.move_menu_up(),
+                AppKey::Down => state.move_menu_down(),
+                AppKey::Confirm => state.confirm_menu_selection(),
+                AppKey::Back => state.return_to_subject_menu(),
+            },
+            AppState::Loading { .. } => match key {
+                AppKey::Back => {
+                    state.return_to_subject_menu();
+                }
                 _ => {}
             },
-            AppState::Error(_) => match key {
-                AppKey::Confirm => state.request_reload(),
-                AppKey::Back => return Action::Quit,
+            AppState::Error { request, .. } => match key {
+                AppKey::Confirm | AppKey::Back => {
+                    if request.subject == crate::app::TriviaSubject::RecentNews {
+                        state.return_to_news_category_menu();
+                    } else {
+                        state.return_to_subject_menu();
+                    }
+                }
                 _ => {}
             },
             AppState::Ready { .. } => match key {

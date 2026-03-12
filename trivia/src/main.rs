@@ -83,7 +83,7 @@ fn x11_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut buf = vec![0u32; x11.width * x11.height];
 
     let frame = Duration::from_millis(16);
-    let mut load_rx: Option<mpsc::Receiver<Result<Vec<app::TriviaItem>, String>>> = None;
+    let mut load_rx: Option<mpsc::Receiver<app::BackgroundLoadResult>> = None;
 
     loop {
         let t0 = Instant::now();
@@ -98,7 +98,9 @@ fn x11_main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if state.is_loading() && load_rx.is_none() {
-            load_rx = Some(app::start_background_load());
+            if let Some(request) = state.loading_request() {
+                load_rx = Some(app::start_background_load(request));
+            }
         }
         if let Some(ref rx) = load_rx {
             if let Ok(result) = rx.try_recv() {
@@ -144,7 +146,7 @@ fn fb_main() {
     configure_keep_awake_for_tty();
 
     let frame = Duration::from_millis(16);
-    let mut load_rx: Option<std::sync::mpsc::Receiver<Result<Vec<app::TriviaItem>, String>>> = None;
+    let mut load_rx: Option<std::sync::mpsc::Receiver<app::BackgroundLoadResult>> = None;
 
     loop {
         let t0 = Instant::now();
@@ -156,7 +158,9 @@ fn fb_main() {
         }
 
         if state.is_loading() && load_rx.is_none() {
-            load_rx = Some(app::start_background_load());
+            if let Some(request) = state.loading_request() {
+                load_rx = Some(app::start_background_load(request));
+            }
         }
         if let Some(ref rx) = load_rx {
             if let Ok(result) = rx.try_recv() {
@@ -210,7 +214,7 @@ fn desktop_main() {
     .expect("failed to create window");
 
     window.set_target_fps(60);
-    let mut load_rx: Option<std::sync::mpsc::Receiver<Result<Vec<app::TriviaItem>, String>>> = None;
+    let mut load_rx: Option<std::sync::mpsc::Receiver<app::BackgroundLoadResult>> = None;
 
     while window.is_open() {
         let raw: Vec<Key> = window.get_keys_pressed(KeyRepeat::No);
@@ -222,7 +226,9 @@ fn desktop_main() {
         }
 
         if state.is_loading() && load_rx.is_none() {
-            load_rx = Some(app::start_background_load());
+            if let Some(request) = state.loading_request() {
+                load_rx = Some(app::start_background_load(request));
+            }
         }
         if let Some(ref rx) = load_rx {
             if let Ok(result) = rx.try_recv() {
