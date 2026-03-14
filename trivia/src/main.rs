@@ -252,6 +252,8 @@ fn map_minifb_key(k: minifb::Key) -> Option<input::AppKey> {
     match k {
         Key::Up | Key::W => Some(AppKey::Up),
         Key::Down | Key::S => Some(AppKey::Down),
+        Key::Left | Key::A => Some(AppKey::Left),
+        Key::Right | Key::D => Some(AppKey::Right),
         Key::Enter | Key::Space => Some(AppKey::Confirm),
         Key::Escape | Key::Backspace | Key::Q => Some(AppKey::Back),
         _ => None,

@@ -4,6 +4,8 @@ use crate::app::AppState;
 pub enum AppKey {
     Up,
     Down,
+    Left,
+    Right,
     Confirm, // Enter / Space
     Back,    // Escape / Backspace / Q
 }
@@ -19,12 +21,16 @@ pub fn handle_keys(keys: &[AppKey], state: &mut AppState) -> Action {
             AppState::SubjectMenu { .. } => match key {
                 AppKey::Up => state.move_menu_up(),
                 AppKey::Down => state.move_menu_down(),
+                AppKey::Left => state.move_menu_left(),
+                AppKey::Right => state.move_menu_right(),
                 AppKey::Confirm => state.confirm_menu_selection(),
                 AppKey::Back => return Action::Quit,
             },
             AppState::NewsCategoryMenu { .. } => match key {
                 AppKey::Up => state.move_menu_up(),
                 AppKey::Down => state.move_menu_down(),
+                AppKey::Left => state.move_menu_left(),
+                AppKey::Right => state.move_menu_right(),
                 AppKey::Confirm => state.confirm_menu_selection(),
                 AppKey::Back => state.return_to_subject_menu(),
             },

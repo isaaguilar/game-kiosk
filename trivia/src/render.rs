@@ -73,7 +73,7 @@ impl Renderer {
                 }
                 self.draw_text_centered(
                     buf,
-                    "Up/Down choose   Enter/Space load   Esc quit",
+                    "Arrows or WASD choose   Enter/Space load   Esc quit",
                     18.0,
                     cx,
                     self.height - 24,

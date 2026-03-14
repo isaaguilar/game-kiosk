@@ -14,9 +14,13 @@ const K_ESC: u16 = 1;
 const K_BACKSPACE: u16 = 14;
 const K_Q: u16 = 16;
 const K_W: u16 = 17;
+const K_A: u16 = 30;
 const K_S: u16 = 31;
+const K_D: u16 = 32;
 const K_ENTER: u16 = 28;
 const K_SPACE: u16 = 57;
+const K_LEFT: u16 = 105;
+const K_RIGHT: u16 = 106;
 const K_UP: u16 = 103;
 const K_DOWN: u16 = 108;
 const K_KPENTER: u16 = 96;
@@ -112,6 +116,8 @@ fn map_key(code: u16) -> Option<AppKey> {
     match code {
         K_UP | K_W => Some(AppKey::Up),
         K_DOWN | K_S => Some(AppKey::Down),
+        K_LEFT | K_A => Some(AppKey::Left),
+        K_RIGHT | K_D => Some(AppKey::Right),
         K_ENTER | K_KPENTER | K_SPACE => Some(AppKey::Confirm),
         K_ESC | K_Q | K_BACKSPACE => Some(AppKey::Back),
         _ => None,

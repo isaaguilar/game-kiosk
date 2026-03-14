@@ -10,6 +10,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const ROUND_SIZE_BIBLE_FUN_FACTS: usize = 21;
+const ROUND_SIZE_RIDDLES: usize = 10;
 const ROUND_SIZE_DEFAULT: usize = 5;
 const CACHE_TTL_SECS: i64 = 14 * 24 * 60 * 60;
 
@@ -31,6 +32,7 @@ pub enum TriviaSubject {
     Bible,
     RecentNews,
     FunFacts,
+    Riddles,
 }
 
 impl TriviaSubject {
@@ -39,6 +41,7 @@ impl TriviaSubject {
             TriviaSubject::Bible => "Bible",
             TriviaSubject::RecentNews => "Recent News",
             TriviaSubject::FunFacts => "Fun Facts",
+            TriviaSubject::Riddles => "Riddles",
         }
     }
 
@@ -47,6 +50,7 @@ impl TriviaSubject {
             TriviaSubject::Bible,
             TriviaSubject::RecentNews,
             TriviaSubject::FunFacts,
+            TriviaSubject::Riddles,
         ]
     }
 }
@@ -117,6 +121,7 @@ impl TriviaRequest {
                 format!("Recent News ({})", cat)
             }
             TriviaSubject::FunFacts => "Fun Facts".to_string(),
+            TriviaSubject::Riddles => "Riddles".to_string(),
         }
     }
 
@@ -128,6 +133,7 @@ impl TriviaRequest {
                 format!("Loading Recent News [{}]", cat)
             }
             TriviaSubject::FunFacts => "Loading Fun Facts".to_string(),
+            TriviaSubject::Riddles => "Loading Riddles".to_string(),
         }
     }
 }
@@ -291,7 +297,57 @@ impl AppState {
         }
     }
 
+    pub fn move_menu_left(&mut self) {
+        match self {
+            AppState::SubjectMenu { subjects, selected } => {
+                if subjects.is_empty() {
+                    return;
+                }
+                *selected = if *selected == 0 {
+                    subjects.len() - 1
+                } else {
+                    *selected - 1
+                };
+            }
+            AppState::NewsCategoryMenu {
+                categories,
+                selected,
+            } => {
+                if categories.is_empty() {
+                    return;
+                }
+                *selected = if *selected == 0 {
+                    categories.len() - 1
+                } else {
+                    *selected - 1
+                };
+            }
+            _ => {}
+        }
+    }
+
     pub fn move_menu_down(&mut self) {
+        match self {
+            AppState::SubjectMenu { subjects, selected } => {
+                if subjects.is_empty() {
+                    return;
+                }
+                *selected = (*selected + 1) % subjects.len();
+            }
+            AppState::NewsCategoryMenu {
+                categories,
+                selected,
+            } => {
+                if categories.is_empty() {
+                    return;
+                }
+                *selected = (*selected + 1) % categories.len();
+            }
+            _ => {}
+        }
+    }
+
+    pub fn move_menu_right(&mut self) {
         match self {
             AppState::SubjectMenu { subjects, selected } => {
                 if subjects.is_empty() {
@@ -337,6 +393,17 @@ impl AppState {
                     TriviaSubject::FunFacts => {
                         let request = TriviaRequest {
                             subject: TriviaSubject::FunFacts,
+                            news_category: None,
+                        };
+                        *self = AppState::Loading {
+                            request,
+                            status: request.loading_status(),
+                            started_at: Instant::now(),
+                        };
+                    }
+                    TriviaSubject::Riddles => {
+                        let request = TriviaRequest {
+                            subject: TriviaSubject::Riddles,
                             news_category: None,
                         };
                         *self = AppState::Loading {
@@ -476,8 +543,17 @@ pub fn start_background_load(request: TriviaRequest) -> mpsc::Receiver<Backgroun
 
 fn cache_threshold(subject: TriviaSubject) -> usize {
     match subject {
+        TriviaSubject::Riddles => 10,
         TriviaSubject::RecentNews => 100,
         _ => 1000,
+    }
+}
+
+fn round_size(subject: TriviaSubject) -> usize {
+    match subject {
+        TriviaSubject::Bible | TriviaSubject::FunFacts => ROUND_SIZE_BIBLE_FUN_FACTS,
+        TriviaSubject::Riddles => ROUND_SIZE_RIDDLES,
+        TriviaSubject::RecentNews => ROUND_SIZE_DEFAULT,
     }
 }
 
@@ -581,7 +657,11 @@ fn call_gemini(
 }
 
 fn should_ai_dedup(subject: TriviaSubject) -> bool {
-    matches!(subject, TriviaSubject::Bible | TriviaSubject::FunFacts)
+    matches!(subject, TriviaSubject::Bible | TriviaSubject::FunFacts | TriviaSubject::Riddles)
+}
+
+fn should_generate_new_batch(subject: TriviaSubject) -> bool {
+    matches!(subject, TriviaSubject::Riddles)
 }
 
 fn now_epoch_secs() -> i64 {
@@ -820,11 +900,7 @@ CANDIDATE_ITEMS_JSON:\n{}",
 fn fetch_trivia(request: TriviaRequest) -> Result<Vec<TriviaItem>, String> {
     let path = cache_file_path(request)?;
     let mut cached = load_trivia_cache(&path);
-    let round_size = if should_ai_dedup(request.subject) {
-        ROUND_SIZE_BIBLE_FUN_FACTS
-    } else {
-        ROUND_SIZE_DEFAULT
-    };
+    let round_size = round_size(request.subject);
 
     let mut cache_changed = false;
     let pruned = ensure_non_stale_cache(&cached);
@@ -853,7 +929,10 @@ fn fetch_trivia(request: TriviaRequest) -> Result<Vec<TriviaItem>, String> {
         persist_trivia_cache(&path, &cached);
     }
 
-    if should_ai_dedup(request.subject) && cached.len() >= cache_threshold(request.subject) {
+    if should_ai_dedup(request.subject)
+        && cached.len() >= cache_threshold(request.subject)
+        && !should_generate_new_batch(request.subject)
+    {
         return Ok(select_round_from_cache(&cached, &seen, round_size));
     }
 
@@ -904,13 +983,20 @@ fn fetch_trivia(request: TriviaRequest) -> Result<Vec<TriviaItem>, String> {
             let domains = get_domains()?;
             fun_facts_prompt(&cached_trivia, &domains)
         }
+        TriviaSubject::Riddles => {
+            let topics = get_riddle_topics()?;
+            riddles_prompt(&cached_trivia, &topics)
+        }
     };
     let prompt = format!("{}\n\n{}", json_output_contract(), base_prompt);
     let text = call_gemini(&client, &api_key, &prompt, trivia_item_array_schema())?;
     let parsed = parse_gemini_json::<Vec<TriviaItem>>(&text)?;
 
-    if parsed.len() < ROUND_SIZE_DEFAULT {
-        return Err("Model returned fewer than 5 trivia items. Please retry.".to_string());
+    if parsed.len() < round_size {
+        return Err(format!(
+            "Model returned fewer than {} trivia items. Please retry.",
+            round_size
+        ));
     }
 
     let mut fresh = if should_ai_dedup(request.subject) {
@@ -1175,6 +1261,68 @@ Output rules:
     prompt
 }
 
+fn get_riddle_topics() -> Result<Vec<String>, String> {
+    let contents = include_str!("../assets/riddle-topics.json");
+    let mut topics = serde_json::from_str::<Vec<String>>(contents)
+        .map_err(|e| format!("Failed to parse riddle-topics.json: {}", e))?;
+
+    topics.retain(|topic| !topic.trim().is_empty());
+    if topics.is_empty() {
+        return Err("riddle-topics.json has no usable topics".to_string());
+    }
+
+    let mut rng = rand::rng();
+    topics.shuffle(&mut rng);
+    topics.truncate(topics.len().min(16));
+    Ok(topics)
+}
+
+fn riddles_prompt(cached: &[TriviaItem], topics: &[String]) -> String {
+    let topic_list = topics
+        .iter()
+        .map(|topic| format!("- {}", topic))
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    let mut prompt = format!(
+        r#"
+Tasks:
+- Generate exactly 10 original, creative riddles.
+- Provide one concise answer per riddle.
+- Use the random topic list below as inspiration and spread coverage across multiple topics.
+- Keep difficulty balanced: 50% should match the current fun/challenging level, and 50% should be noticeably harder.
+- For the harder 50%, self-check each one at >=8/10 for cleverness, misdirection, and non-obvious deduction.
+
+Content Rules:
+- Riddles must be solvable, clear, and family-friendly.
+- Avoid extreme obscurity or trick wording that makes the answer arbitrary.
+- Answers should usually be short (1 to 4 words) and specific.
+- Use a mix of concrete objects, nature, time, language, and everyday concepts.
+- Avoid common stock riddles and overused patterns.
+- Harder riddles should use layered clues, metaphor, and at least one subtle misdirection.
+- Easier-half riddles should still avoid trivial one-clue giveaways.
+- Random topics for this run:
+__TOPICS__
+
+Novelty Rules:
+- Do NOT repeat or reuse ANY previously asked question in ANY form.
+- Do NOT reuse the same underlying answer + clue pattern as any previously asked item.
+- Do NOT create a paraphrase or near-duplicate of any previously asked riddle.
+- Treat all previously asked questions as permanently banned concepts.
+
+Output Rules:
+- Return ONLY a JSON array of exactly 10 objects.
+- Each object must contain fields 'question' and 'answer'.
+- No markdown, no commentary, no code fences.
+- Target split in this 10-item batch: 5 medium-hard and 5 hard.
+"#
+    )
+    .replace("__TOPICS__", &topic_list);
+
+    prompt.push_str(&previously_asked_block(cached));
+    prompt
+}
+
 fn recent_news_prompt(
     client: &Client,
     request: TriviaRequest,
@@ -1250,6 +1398,7 @@ fn cache_file_path(request: TriviaRequest) -> Result<PathBuf, String> {
     let file_name = match request.subject {
         TriviaSubject::Bible => "bible.json".to_string(),
         TriviaSubject::FunFacts => "fun-facts.json".to_string(),
+        TriviaSubject::Riddles => "riddles.json".to_string(),
         TriviaSubject::RecentNews => {
             let cat = request
                 .news_category
@@ -1307,6 +1456,7 @@ fn seen_file_path(request: TriviaRequest) -> Option<PathBuf> {
     let file_name = match request.subject {
         TriviaSubject::Bible => "bible-seen.json",
         TriviaSubject::FunFacts => "fun-facts-seen.json",
+        TriviaSubject::Riddles => "riddles-seen.json",
         TriviaSubject::RecentNews => return None,
     };
 

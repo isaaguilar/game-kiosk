@@ -238,12 +238,16 @@ fn x11_keycode_to_appkey(code: u8) -> Option<AppKey> {
         9 => Some(AppKey::Back),      // Escape
         22 => Some(AppKey::Back),     // BackSpace
         24 => Some(AppKey::Back),     // Q
+        38 => Some(AppKey::Left),     // A
         25 => Some(AppKey::Up),       // W
         36 => Some(AppKey::Confirm),  // Return
+        40 => Some(AppKey::Right),    // D
         39 => Some(AppKey::Down),     // S
         65 => Some(AppKey::Confirm),  // Space
         104 => Some(AppKey::Confirm), // KP_Enter
+        113 => Some(AppKey::Left),    // Left
         111 => Some(AppKey::Up),      // Up
+        114 => Some(AppKey::Right),   // Right
         116 => Some(AppKey::Down),    // Down
         _ => None,
     }
