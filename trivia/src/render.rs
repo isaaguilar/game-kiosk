@@ -159,7 +159,14 @@ impl Renderer {
             }
             AppState::Ready { request, items, .. } => {
                 self.draw_text_centered(buf, "TRIVIA", 72.0, cx, self.height / 4, WHITE);
-                self.draw_text_centered(buf, &request.menu_title(), 24.0, cx, self.height / 4 + 44, GRAY);
+                self.draw_text_centered(
+                    buf,
+                    &request.menu_title(),
+                    24.0,
+                    cx,
+                    self.height / 4 + 44,
+                    GRAY,
+                );
                 let msg = format!("{} questions loaded.", items.len());
                 self.draw_text_centered(buf, &msg, 32.0, cx, cy, WHITE);
                 self.draw_text_centered(
