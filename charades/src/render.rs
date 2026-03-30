@@ -1,5 +1,8 @@
-use fontdue::{Font, FontSettings, layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle, HorizontalAlign, VerticalAlign}};
 use crate::app::{AppState, MENU_ITEMS};
+use fontdue::{
+    layout::{CoordinateSystem, HorizontalAlign, Layout, LayoutSettings, TextStyle, VerticalAlign},
+    Font, FontSettings,
+};
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 
@@ -20,7 +23,11 @@ impl Renderer {
     pub fn new(width: usize, height: usize) -> Self {
         let font = Font::from_bytes(FONT_BYTES, FontSettings::default())
             .expect("failed to load bundled font");
-        Self { width, height, font }
+        Self {
+            width,
+            height,
+            font,
+        }
     }
 
     /// Render the current app state into the pixel buffer.
@@ -30,7 +37,11 @@ impl Renderer {
 
         match state {
             AppState::Menu { selected } => self.draw_menu(buf, *selected),
-            AppState::Playing { current_prompt, difficulty, .. } => {
+            AppState::Playing {
+                current_prompt,
+                difficulty,
+                ..
+            } => {
                 self.draw_playing(buf, current_prompt, difficulty.label());
             }
         }
@@ -124,7 +135,11 @@ impl Renderer {
             return (0, size as usize);
         }
         let min_x = glyphs.iter().map(|g| g.x as i32).min().unwrap_or(0);
-        let max_x = glyphs.iter().map(|g| (g.x + g.width as f32) as i32).max().unwrap_or(0);
+        let max_x = glyphs
+            .iter()
+            .map(|g| (g.x + g.width as f32) as i32)
+            .max()
+            .unwrap_or(0);
         let min_y = glyphs.iter().map(|g| g.y as i32).min().unwrap_or(0);
         let max_y = glyphs
             .iter()
@@ -179,7 +194,11 @@ impl Renderer {
 
         // Compute bounding box to center the whole run
         let min_gx = glyphs.iter().map(|g| g.x as i32).min().unwrap_or(0);
-        let max_gx = glyphs.iter().map(|g| (g.x + g.width as f32) as i32).max().unwrap_or(0);
+        let max_gx = glyphs
+            .iter()
+            .map(|g| (g.x + g.width as f32) as i32)
+            .max()
+            .unwrap_or(0);
         let total_w = (max_gx - min_gx).unsigned_abs() as i32;
         let total_h = layout.height() as i32;
 
@@ -222,7 +241,15 @@ impl Renderer {
     }
 
     /// Draw a 1-pixel-thick axis-aligned rectangle outline.
-    fn draw_rect_outline(&self, buf: &mut Vec<u32>, x0: usize, y0: usize, x1: usize, y1: usize, color: u32) {
+    fn draw_rect_outline(
+        &self,
+        buf: &mut Vec<u32>,
+        x0: usize,
+        y0: usize,
+        x1: usize,
+        y1: usize,
+        color: u32,
+    ) {
         // Top and bottom edges
         for x in x0..=x1 {
             if y0 < self.height {

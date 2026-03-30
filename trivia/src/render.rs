@@ -205,15 +205,16 @@ impl Renderer {
                 };
                 self.draw_text_centered(buf, &heading, 24.0, cx, 34, GRAY);
                 let text_cx = cx.saturating_sub(30);
+                let question_cy = self.height * 2 / 5;
                 self.draw_wrapped_text_fit_centered(
                     buf,
                     &item.question,
-                    48.0,
-                    20.0,
+                    44.0,
+                    18.0,
                     text_cx,
-                    cy,
+                    question_cy,
                     (self.width as f32 * 0.74) as i32,
-                    (self.height as f32 * 0.68) as i32,
+                    (self.height as f32 * 0.58) as i32,
                     WHITE,
                 );
                 self.draw_timer_pie(
@@ -246,6 +247,7 @@ impl Renderer {
                 request,
                 items,
                 current_idx,
+                selected_action,
             } => {
                 let item = &items[*current_idx];
                 let heading = if request.subject == crate::app::TriviaSubject::RecentNews {
@@ -254,25 +256,129 @@ impl Renderer {
                     "ANSWER".to_string()
                 };
                 self.draw_text_centered(buf, &heading, 24.0, cx, 34, GRAY);
+
+                // Answer text: constrained to not overlap bottom button row
+                let answer_cy = self.height * 2 / 5;
+                let answer_max_h = (self.height as f32 * 0.50) as i32;
                 self.draw_wrapped_text_fit_centered(
                     buf,
                     &item.answer,
-                    52.0,
-                    22.0,
+                    44.0,
+                    18.0,
                     cx,
-                    cy,
-                    (self.width as f32 * 0.90) as i32,
-                    (self.height as f32 * 0.68) as i32,
+                    answer_cy,
+                    (self.width as f32 * 0.88) as i32,
+                    answer_max_h,
                     YELLOW,
                 );
 
-                let hint = if *current_idx + 1 < items.len() {
-                    "Press Enter/Space for next question"
+                // Bottom buttons
+                let btn_y = self.height.saturating_sub(54);
+                let has_explain = request.subject.supports_explanation();
+                if has_explain {
+                    let left_cx = self.width / 4;
+                    let right_cx = self.width * 3 / 4;
+                    self.draw_action_button(
+                        buf,
+                        crate::app::AnswerAction::ExplainFurther.label(),
+                        *selected_action == crate::app::AnswerAction::ExplainFurther,
+                        left_cx,
+                        btn_y,
+                    );
+                    self.draw_action_button(
+                        buf,
+                        crate::app::AnswerAction::Continue.label(),
+                        *selected_action == crate::app::AnswerAction::Continue,
+                        right_cx,
+                        btn_y,
+                    );
+                    let hint = "Arrow keys switch   Enter/Space activate   S: see question";
+                    self.draw_text_centered(buf, hint, 14.0, cx, self.height - 14, GRAY);
                 } else {
-                    "End of round. Press Enter/Space to reload"
-                };
-                self.draw_text_centered(buf, hint, 18.0, cx, self.height - 24, GRAY);
+                    self.draw_action_button(
+                        buf,
+                        crate::app::AnswerAction::Continue.label(),
+                        true,
+                        cx,
+                        btn_y,
+                    );
+                    let hint = "Enter/Space: continue   S: see question";
+                    self.draw_text_centered(buf, hint, 14.0, cx, self.height - 14, GRAY);
+                }
             }
+            AppState::ExplanationLoading {
+                status,
+                started_at,
+                ..
+            } => {
+                self.draw_text_centered(buf, "EXPLANATION", 48.0, cx, self.height / 5, WHITE);
+
+                let elapsed_ms = started_at.elapsed().as_millis() as u64;
+                let dot_count = ((elapsed_ms / 400) % 4) as usize;
+                let dots = &"..."[..dot_count];
+                let loading = format!("{}{}", status, dots);
+                self.draw_text_centered(buf, &loading, 28.0, cx, cy, WHITE);
+                self.draw_spinner(buf, cx, cy + 50, elapsed_ms);
+                self.draw_text_centered(
+                    buf,
+                    "S: see question   Esc: back",
+                    14.0,
+                    cx,
+                    self.height - 14,
+                    GRAY,
+                );
+            }
+            AppState::Explanation {
+                explanation,
+                scroll_offset,
+                ..
+            } => {
+                self.draw_text_centered(buf, "EXPLANATION", 32.0, cx, 28, WHITE);
+
+                let top = 56usize;
+                let bottom = self.height.saturating_sub(40);
+                let max_lines = Some(11);
+                self.draw_scrollable_text(
+                    buf,
+                    explanation,
+                    20.0,
+                    cx,
+                    top,
+                    bottom,
+                    *scroll_offset,
+                    max_lines,
+                    WHITE,
+                );
+
+                let (total_lines, visible_lines) = self.measure_scrollable_text(
+                    explanation,
+                    20.0,
+                    self.width.saturating_mul(82) / 100,
+                    top,
+                    bottom,
+                    max_lines,
+                );
+                let max_scroll = total_lines.saturating_sub(visible_lines);
+                let has_more = *scroll_offset < max_scroll;
+                let hint = if has_more {
+                    "Enter/Space: next page   S: back to answer"
+                } else {
+                    "Enter/Space: back to answer   S: back to answer"
+                };
+                self.draw_text_centered(buf, hint, 14.0, cx, self.height - 14, GRAY);
+            }
+        }
+    }
+
+    /// Returns (total_lines, visible_lines) for the current Explanation state, or None.
+    pub fn explanation_page_info(&self, state: &AppState) -> Option<(usize, usize)> {
+        if let AppState::Explanation { explanation, .. } = state {
+            let top = 56usize;
+            let bottom = self.height.saturating_sub(40);
+            let max_width = self.width.saturating_mul(82) / 100;
+            Some(self.measure_scrollable_text(explanation, 20.0, max_width, top, bottom, Some(11)))
+        } else {
+            None
         }
     }
 
@@ -669,6 +775,134 @@ impl Renderer {
                 }
             }
         }
+    }
+
+    fn draw_action_button(
+        &self,
+        buf: &mut Vec<u32>,
+        label: &str,
+        selected: bool,
+        cx: usize,
+        cy: usize,
+    ) {
+        let size = 20.0_f32;
+        let (tw, th) = self.measure_text(label, size);
+        let pad_x = 18usize;
+        let pad_y = 8usize;
+        let x0 = cx.saturating_sub(tw / 2 + pad_x);
+        let y0 = cy.saturating_sub(th / 2 + pad_y);
+        let x1 = (cx + tw / 2 + pad_x).min(self.width.saturating_sub(1));
+        let y1 = (cy + th / 2 + pad_y).min(self.height.saturating_sub(1));
+        let color = if selected { YELLOW } else { WHITE };
+        self.draw_text_centered(buf, label, size, cx, cy, color);
+        self.draw_rect_outline(buf, x0, y0, x1, y1, color);
+    }
+
+    fn scroll_line_height(&self, size: f32) -> usize {
+        self.measure_text("Ag", size)
+            .1
+            .max(size as usize)
+            .saturating_add(8)
+    }
+
+    fn wrap_text_lines(&self, text: &str, size: f32, max_width: usize) -> Vec<String> {
+        let mut lines = Vec::new();
+        let limit = max_width.max(1);
+
+        for paragraph in text.split('\n') {
+            let paragraph = paragraph.trim();
+            if paragraph.is_empty() {
+                lines.push(String::new());
+                continue;
+            }
+
+            let mut current = String::new();
+            for word in paragraph.split_whitespace() {
+                let candidate = if current.is_empty() {
+                    word.to_string()
+                } else {
+                    format!("{} {}", current, word)
+                };
+                if self.measure_text(&candidate, size).0 > limit && !current.is_empty() {
+                    lines.push(current);
+                    current = word.to_string();
+                } else {
+                    current = candidate;
+                }
+            }
+            if !current.is_empty() {
+                lines.push(current);
+            }
+        }
+
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+
+        lines
+    }
+
+    fn draw_scrollable_text(
+        &self,
+        buf: &mut Vec<u32>,
+        text: &str,
+        size: f32,
+        cx: usize,
+        top: usize,
+        bottom: usize,
+        scroll_offset: usize,
+        max_lines: Option<usize>,
+        color: u32,
+    ) {
+        let max_width = self.width.saturating_mul(82) / 100;
+        let lines = self.wrap_text_lines(text, size, max_width);
+        let line_height = self.scroll_line_height(size);
+        let available_height = bottom.saturating_sub(top);
+        let mut visible_lines = (available_height / line_height).max(1);
+        if let Some(cap) = max_lines {
+            visible_lines = visible_lines.min(cap);
+        }
+        let max_scroll = lines.len().saturating_sub(visible_lines);
+        let scroll = scroll_offset.min(max_scroll);
+        let start_y = top + line_height / 2;
+
+        for (idx, line) in lines.iter().skip(scroll).take(visible_lines).enumerate() {
+            let y = start_y + idx * line_height;
+            self.draw_text_centered(buf, line, size, cx, y, color);
+        }
+
+        // Blinking down-arrow when more content is below
+        let has_more_below = scroll < max_scroll;
+        if has_more_below {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let blink_on = (now_ms / 500) % 2 == 0;
+            if blink_on {
+                let last_line_idx = visible_lines.saturating_sub(1);
+                let arrow_y = start_y + last_line_idx * line_height + line_height;
+                self.draw_text_centered(buf, "\u{25BC}", size, cx, arrow_y, GRAY);
+            }
+        }
+    }
+
+    fn measure_scrollable_text(
+        &self,
+        text: &str,
+        size: f32,
+        max_width: usize,
+        top: usize,
+        bottom: usize,
+        max_lines: Option<usize>,
+    ) -> (usize, usize) {
+        let lines = self.wrap_text_lines(text, size, max_width);
+        let line_height = self.scroll_line_height(size);
+        let mut visible_lines = ((bottom.saturating_sub(top)) / line_height).max(1);
+        if let Some(cap) = max_lines {
+            visible_lines = visible_lines.min(cap);
+        }
+        (lines.len(), visible_lines)
     }
 
     fn draw_spinner(&self, buf: &mut Vec<u32>, cx: usize, cy: usize, elapsed_ms: u64) {

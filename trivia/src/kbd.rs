@@ -62,9 +62,7 @@ impl Keyboard {
 
             // Check supported event types (4-byte bitmask)
             let mut evtypes = [0u8; 4];
-            let r = unsafe {
-                libc::ioctl(fd, EVIOCGBIT_TYPES as _, evtypes.as_mut_ptr())
-            };
+            let r = unsafe { libc::ioctl(fd, EVIOCGBIT_TYPES as _, evtypes.as_mut_ptr()) };
             if r < 0 || !bit_is_set(&evtypes, EV_KEY as usize) {
                 unsafe { libc::close(fd) };
                 continue;
@@ -83,13 +81,7 @@ impl Keyboard {
         for &fd in &self.fds {
             loop {
                 let mut ev: InputEvent = unsafe { std::mem::zeroed() };
-                let n = unsafe {
-                    libc::read(
-                        fd,
-                        &mut ev as *mut _ as *mut libc::c_void,
-                        ev_bytes,
-                    )
-                };
+                let n = unsafe { libc::read(fd, &mut ev as *mut _ as *mut libc::c_void, ev_bytes) };
                 if n != ev_bytes as libc::ssize_t {
                     break; // WouldBlock or error — nothing more to read
                 }
@@ -115,7 +107,8 @@ impl Drop for Keyboard {
 fn map_key(code: u16) -> Option<AppKey> {
     match code {
         K_UP | K_W => Some(AppKey::Up),
-        K_DOWN | K_S => Some(AppKey::Down),
+        K_DOWN => Some(AppKey::Down),
+        K_S => Some(AppKey::SeeQuestion),
         K_LEFT | K_A => Some(AppKey::Left),
         K_RIGHT | K_D => Some(AppKey::Right),
         K_ENTER | K_KPENTER | K_SPACE => Some(AppKey::Confirm),

@@ -61,10 +61,7 @@ impl X11Backend {
 
         // Map the window and force it to the top of the X11 stack
         conn.map_window(win)?;
-        conn.configure_window(
-            win,
-            &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
-        )?;
+        conn.configure_window(win, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
         conn.flush()?;
 
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -83,8 +80,14 @@ impl X11Backend {
 
         // Apply an explicit transparent cursor to both our window and root.
         let hidden_cursor = create_invisible_cursor(&conn, root)?;
-        conn.change_window_attributes(win, &ChangeWindowAttributesAux::new().cursor(hidden_cursor))?;
-        conn.change_window_attributes(root, &ChangeWindowAttributesAux::new().cursor(hidden_cursor))?;
+        conn.change_window_attributes(
+            win,
+            &ChangeWindowAttributesAux::new().cursor(hidden_cursor),
+        )?;
+        conn.change_window_attributes(
+            root,
+            &ChangeWindowAttributesAux::new().cursor(hidden_cursor),
+        )?;
 
         // Also grab the pointer with that transparent cursor while we run.
         let pointer_status = conn
@@ -149,7 +152,9 @@ impl X11Backend {
 
     /// Reacquire kiosk input grabs after a child game exits.
     pub fn reacquire_input_grabs(&mut self) {
-        let _ = self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.win, 0u32);
+        let _ = self
+            .conn
+            .set_input_focus(InputFocus::POINTER_ROOT, self.win, 0u32);
 
         let _ = self
             .conn
@@ -193,10 +198,7 @@ impl X11Backend {
             let start = y * w;
             let end = start + chunk_h * w;
             let data: &[u8] = unsafe {
-                std::slice::from_raw_parts(
-                    buf[start..end].as_ptr() as *const u8,
-                    (end - start) * 4,
-                )
+                std::slice::from_raw_parts(buf[start..end].as_ptr() as *const u8, (end - start) * 4)
             };
             let _ = self.conn.put_image(
                 ImageFormat::Z_PIXMAP,

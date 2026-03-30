@@ -9,6 +9,47 @@ mod kbd;
 #[cfg(target_os = "linux")]
 mod x11_backend;
 
+enum BackgroundJob {
+    Trivia(std::sync::mpsc::Receiver<app::BackgroundLoadResult>),
+    Explanation(std::sync::mpsc::Receiver<app::BackgroundExplanationResult>),
+}
+
+fn pump_background_job(state: &mut app::AppState, job: &mut Option<BackgroundJob>) {
+    if !state.is_loading() && job.is_some() {
+        *job = None;
+    }
+
+    if state.is_loading() && job.is_none() {
+        if let Some(pending) = state.pending_background_job() {
+            *job = Some(match pending {
+                app::PendingBackgroundJob::Trivia(request) => {
+                    BackgroundJob::Trivia(app::start_background_load(request))
+                }
+                app::PendingBackgroundJob::Explanation(request) => {
+                    BackgroundJob::Explanation(app::start_background_explanation(request))
+                }
+            });
+        }
+    }
+
+    if let Some(active_job) = job.as_ref() {
+        match active_job {
+            BackgroundJob::Trivia(rx) => {
+                if let Ok(result) = rx.try_recv() {
+                    state.apply_load_result(result);
+                    *job = None;
+                }
+            }
+            BackgroundJob::Explanation(rx) => {
+                if let Ok(result) = rx.try_recv() {
+                    state.apply_explanation_result(result);
+                    *job = None;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn run_best_effort(command: &str, args: &[&str]) -> bool {
     std::process::Command::new(command)
@@ -71,7 +112,6 @@ fn x11_main() -> Result<(), Box<dyn std::error::Error>> {
     use app::AppState;
     use input::{handle_keys, Action};
     use render::Renderer;
-    use std::sync::mpsc;
     use std::time::{Duration, Instant};
     use x11_backend::X11Backend;
 
@@ -83,7 +123,7 @@ fn x11_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut buf = vec![0u32; x11.width * x11.height];
 
     let frame = Duration::from_millis(16);
-    let mut load_rx: Option<mpsc::Receiver<app::BackgroundLoadResult>> = None;
+    let mut background_job: Option<BackgroundJob> = None;
 
     loop {
         let t0 = Instant::now();
@@ -92,22 +132,13 @@ fn x11_main() -> Result<(), Box<dyn std::error::Error>> {
             Some(k) => k,
             None => break,
         };
-        match handle_keys(&keys, &mut state) {
+        let page_info = renderer.explanation_page_info(&state);
+        match handle_keys(&keys, &mut state, page_info) {
             Action::Quit => break,
             Action::None => {}
         }
 
-        if state.is_loading() && load_rx.is_none() {
-            if let Some(request) = state.loading_request() {
-                load_rx = Some(app::start_background_load(request));
-            }
-        }
-        if let Some(ref rx) = load_rx {
-            if let Ok(result) = rx.try_recv() {
-                state.apply_load_result(result);
-                load_rx = None;
-            }
-        }
+        pump_background_job(&mut state, &mut background_job);
 
         state.update();
         renderer.draw(&mut buf, &state);
@@ -146,28 +177,19 @@ fn fb_main() {
     configure_keep_awake_for_tty();
 
     let frame = Duration::from_millis(16);
-    let mut load_rx: Option<std::sync::mpsc::Receiver<app::BackgroundLoadResult>> = None;
+    let mut background_job: Option<BackgroundJob> = None;
 
     loop {
         let t0 = Instant::now();
 
         let keys = kbd.poll();
-        match handle_keys(&keys, &mut state) {
+        let page_info = renderer.explanation_page_info(&state);
+        match handle_keys(&keys, &mut state, page_info) {
             Action::Quit => break,
             Action::None => {}
         }
 
-        if state.is_loading() && load_rx.is_none() {
-            if let Some(request) = state.loading_request() {
-                load_rx = Some(app::start_background_load(request));
-            }
-        }
-        if let Some(ref rx) = load_rx {
-            if let Ok(result) = rx.try_recv() {
-                state.apply_load_result(result);
-                load_rx = None;
-            }
-        }
+        pump_background_job(&mut state, &mut background_job);
 
         state.update();
         renderer.draw(&mut buf, &state);
@@ -214,28 +236,19 @@ fn desktop_main() {
     .expect("failed to create window");
 
     window.set_target_fps(60);
-    let mut load_rx: Option<std::sync::mpsc::Receiver<app::BackgroundLoadResult>> = None;
+    let mut background_job: Option<BackgroundJob> = None;
 
     while window.is_open() {
         let raw: Vec<Key> = window.get_keys_pressed(KeyRepeat::No);
         let keys: Vec<AppKey> = raw.iter().filter_map(|&k| map_minifb_key(k)).collect();
 
-        match handle_keys(&keys, &mut state) {
+        let page_info = renderer.explanation_page_info(&state);
+        match handle_keys(&keys, &mut state, page_info) {
             Action::Quit => break,
             Action::None => {}
         }
 
-        if state.is_loading() && load_rx.is_none() {
-            if let Some(request) = state.loading_request() {
-                load_rx = Some(app::start_background_load(request));
-            }
-        }
-        if let Some(ref rx) = load_rx {
-            if let Ok(result) = rx.try_recv() {
-                state.apply_load_result(result);
-                load_rx = None;
-            }
-        }
+        pump_background_job(&mut state, &mut background_job);
 
         state.update();
         renderer.draw(&mut buf, &state);
@@ -251,7 +264,8 @@ fn map_minifb_key(k: minifb::Key) -> Option<input::AppKey> {
     use minifb::Key;
     match k {
         Key::Up | Key::W => Some(AppKey::Up),
-        Key::Down | Key::S => Some(AppKey::Down),
+        Key::Down => Some(AppKey::Down),
+        Key::S => Some(AppKey::SeeQuestion),
         Key::Left | Key::A => Some(AppKey::Left),
         Key::Right | Key::D => Some(AppKey::Right),
         Key::Enter | Key::Space => Some(AppKey::Confirm),

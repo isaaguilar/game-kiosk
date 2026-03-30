@@ -1,4 +1,4 @@
-use crate::words::{Difficulty, WordQueue, load_queue};
+use crate::words::{load_queue, Difficulty, WordQueue};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MenuSelection {
@@ -77,7 +77,12 @@ impl AppState {
 
     /// Advance to next prompt while in Playing state.
     pub fn next_prompt(&mut self) {
-        if let AppState::Playing { current_prompt, queue, .. } = self {
+        if let AppState::Playing {
+            current_prompt,
+            queue,
+            ..
+        } = self
+        {
             *current_prompt = queue.next();
         }
     }

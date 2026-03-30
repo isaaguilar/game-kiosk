@@ -30,9 +30,16 @@ pub const MENU_ITEMS: [GameSelection; 3] = [
 ];
 
 pub enum AppState {
-    GameSelect { selected: usize },
-    QuitPrompt { selected: usize },
-    LaunchGame { game: GameSelection, selected: usize },
+    GameSelect {
+        selected: usize,
+    },
+    QuitPrompt {
+        selected: usize,
+    },
+    LaunchGame {
+        game: GameSelection,
+        selected: usize,
+    },
 }
 
 impl AppState {

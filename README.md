@@ -44,6 +44,18 @@ All apps are keyboard-driven and use the same no-sleep behavior for kiosk enviro
 | Enter / Space | Start round | Next prompt |
 | Esc / Q / Backspace | Quit app | Return to menu |
 
+### Trivia
+
+| Key | Menu / Question | Answer / Explanation |
+|---|---|---|
+| ↑ / W | Move selection up | Select previous action / scroll up |
+| ↓ / S | Move selection down | Select next action / scroll down |
+| Enter / Space | Load / reveal / confirm | Activate the selected action / continue |
+| Esc / Q / Backspace | Quit / go back | Quit / return to question |
+
+On the answer screen, `Explain further`, `See question`, and `Continue` are selectable actions.
+The explanation view keeps the rest of the screen fixed and only the explanation text scrolls.
+
 ## Word Lists
 
 - `charades/assets/easy.txt`

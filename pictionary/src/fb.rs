@@ -48,7 +48,7 @@ struct FbVarScreenInfo {
 pub struct Framebuffer {
     pub width: usize,
     pub height: usize,
-    stride: usize,     // pixels per row (>= width)
+    stride: usize, // pixels per row (>= width)
     red_off: u32,
     green_off: u32,
     blue_off: u32,
@@ -61,9 +61,7 @@ pub struct Framebuffer {
 impl Framebuffer {
     pub fn open() -> std::io::Result<Self> {
         let path = b"/dev/fb0\0";
-        let fd = unsafe {
-            libc::open(path.as_ptr() as *const libc::c_char, libc::O_RDWR)
-        };
+        let fd = unsafe { libc::open(path.as_ptr() as *const libc::c_char, libc::O_RDWR) };
         if fd < 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -138,7 +136,9 @@ impl Framebuffer {
                 let g = (src >> 8) & 0xFF;
                 let b = src & 0xFF;
                 let pixel = (r << self.red_off) | (g << self.green_off) | (b << self.blue_off);
-                unsafe { *fb.add(y * self.stride + x) = pixel; }
+                unsafe {
+                    *fb.add(y * self.stride + x) = pixel;
+                }
             }
         }
     }
@@ -157,18 +157,18 @@ impl Framebuffer {
                 let r5 = (r >> 3) & 0x1F;
                 let g6 = (g >> 2) & 0x3F;
                 let b5 = (b >> 3) & 0x1F;
-                let pixel = ((r5 << self.red_off) | (g6 << self.green_off) | (b5 << self.blue_off)) as u16;
-                unsafe { *fb.add(y * self.stride + x) = pixel; }
+                let pixel =
+                    ((r5 << self.red_off) | (g6 << self.green_off) | (b5 << self.blue_off)) as u16;
+                unsafe {
+                    *fb.add(y * self.stride + x) = pixel;
+                }
             }
         }
     }
 
     /// Hide the blinking cursor on the framebuffer console.
     pub fn hide_cursor() {
-        let _ = std::fs::write(
-            "/sys/class/graphics/fbcon/cursor_blink",
-            b"0",
-        );
+        let _ = std::fs::write("/sys/class/graphics/fbcon/cursor_blink", b"0");
         // Also send VT escape to hide cursor in the TTY
         print!("\x1b[?25l");
         use std::io::Write;
@@ -179,10 +179,7 @@ impl Framebuffer {
         print!("\x1b[?25h");
         use std::io::Write;
         let _ = std::io::stdout().flush();
-        let _ = std::fs::write(
-            "/sys/class/graphics/fbcon/cursor_blink",
-            b"1",
-        );
+        let _ = std::fs::write("/sys/class/graphics/fbcon/cursor_blink", b"1");
     }
 }
 

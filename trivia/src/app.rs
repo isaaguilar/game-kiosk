@@ -18,6 +18,8 @@ const CACHE_TTL_SECS: i64 = 14 * 24 * 60 * 60;
 pub struct TriviaItem {
     pub question: String,
     pub answer: String,
+    #[serde(skip)]
+    pub explanation: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -52,6 +54,10 @@ impl TriviaSubject {
             TriviaSubject::FunFacts,
             TriviaSubject::Riddles,
         ]
+    }
+
+    pub fn supports_explanation(self) -> bool {
+        matches!(self, TriviaSubject::Bible | TriviaSubject::FunFacts)
     }
 }
 
@@ -138,6 +144,35 @@ impl TriviaRequest {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ExplanationRequest {
+    pub request: TriviaRequest,
+    pub question: String,
+    pub answer: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnswerAction {
+    ExplainFurther,
+    Continue,
+}
+
+impl AnswerAction {
+    pub fn label(self) -> &'static str {
+        match self {
+            AnswerAction::ExplainFurther => "Explain further",
+            AnswerAction::Continue => "Continue",
+        }
+    }
+
+    pub fn other(self) -> Self {
+        match self {
+            AnswerAction::ExplainFurther => AnswerAction::Continue,
+            AnswerAction::Continue => AnswerAction::ExplainFurther,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct GeminiResponse {
     candidates: Vec<Candidate>,
@@ -211,6 +246,12 @@ const US_TOP_SOURCE_IDS: [&str; 20] = [
 ];
 
 pub type BackgroundLoadResult = (TriviaRequest, Result<Vec<TriviaItem>, String>);
+pub type BackgroundExplanationResult = (ExplanationRequest, Result<String, String>);
+
+pub enum PendingBackgroundJob {
+    Trivia(TriviaRequest),
+    Explanation(ExplanationRequest),
+}
 
 pub enum AppState {
     SubjectMenu {
@@ -246,6 +287,23 @@ pub enum AppState {
         request: TriviaRequest,
         items: Vec<TriviaItem>,
         current_idx: usize,
+        selected_action: AnswerAction,
+    },
+    ExplanationLoading {
+        request: TriviaRequest,
+        items: Vec<TriviaItem>,
+        current_idx: usize,
+        question: String,
+        answer: String,
+        status: String,
+        started_at: Instant,
+    },
+    Explanation {
+        request: TriviaRequest,
+        items: Vec<TriviaItem>,
+        current_idx: usize,
+        explanation: String,
+        scroll_offset: usize,
     },
 }
 
@@ -258,12 +316,25 @@ impl AppState {
     }
 
     pub fn is_loading(&self) -> bool {
-        matches!(self, AppState::Loading { .. })
+        matches!(
+            self,
+            AppState::Loading { .. } | AppState::ExplanationLoading { .. }
+        )
     }
 
-    pub fn loading_request(&self) -> Option<TriviaRequest> {
+    pub fn pending_background_job(&self) -> Option<PendingBackgroundJob> {
         match self {
-            AppState::Loading { request, .. } => Some(*request),
+            AppState::Loading { request, .. } => Some(PendingBackgroundJob::Trivia(*request)),
+            AppState::ExplanationLoading {
+                request,
+                question,
+                answer,
+                ..
+            } => Some(PendingBackgroundJob::Explanation(ExplanationRequest {
+                request: *request,
+                question: question.clone(),
+                answer: answer.clone(),
+            })),
             _ => None,
         }
     }
@@ -466,6 +537,41 @@ impl AppState {
         }
     }
 
+    pub fn apply_explanation_result(&mut self, load: BackgroundExplanationResult) {
+        let (request, result) = load;
+        match result {
+            Ok(explanation) => {
+                if let AppState::ExplanationLoading {
+                    request: trivia_request,
+                    items,
+                    current_idx,
+                    ..
+                } = self
+                {
+                    // Cache explanation in the item
+                    if let Some(item) = items.get_mut(*current_idx) {
+                        item.explanation = Some(explanation.clone());
+                    }
+                    let items = items.clone();
+                    let current_idx = *current_idx;
+                    *self = AppState::Explanation {
+                        request: *trivia_request,
+                        items,
+                        current_idx,
+                        explanation,
+                        scroll_offset: 0,
+                    };
+                }
+            }
+            Err(message) => {
+                *self = AppState::Error {
+                    request: request.request,
+                    message,
+                };
+            }
+        }
+    }
+
     pub fn start_game(&mut self) {
         if let AppState::Ready {
             request,
@@ -486,6 +592,126 @@ impl AppState {
         }
     }
 
+    pub fn move_answer_down(&mut self) {
+        if let AppState::Answer {
+            request,
+            selected_action,
+            ..
+        } = self
+        {
+            if request.subject.supports_explanation() {
+                *selected_action = (*selected_action).other();
+            }
+        }
+    }
+
+    pub fn confirm_answer_selection(&mut self) {
+        match self {
+            AppState::Answer {
+                selected_action, ..
+            } => match *selected_action {
+                AnswerAction::ExplainFurther => self.begin_explanation(),
+                AnswerAction::Continue => self.next_step(),
+            },
+            _ => {}
+        }
+    }
+
+    pub fn explanation_page_forward(&mut self, total_lines: usize, visible_lines: usize) {
+        let should_return = if let AppState::Explanation { scroll_offset, .. } = self {
+            let max_scroll = total_lines.saturating_sub(visible_lines);
+            if *scroll_offset >= max_scroll {
+                true
+            } else {
+                *scroll_offset = (*scroll_offset + visible_lines).min(max_scroll);
+                false
+            }
+        } else {
+            false
+        };
+        if should_return {
+            self.return_to_answer();
+        }
+    }
+
+    pub fn return_to_answer(&mut self) {
+        if let AppState::Explanation {
+            request,
+            items,
+            current_idx,
+            ..
+        } = self
+        {
+            *self = AppState::Answer {
+                request: *request,
+                items: items.clone(),
+                current_idx: *current_idx,
+                selected_action: AnswerAction::Continue,
+            };
+        }
+    }
+
+    pub fn return_to_question(&mut self) {
+        match self {
+            AppState::Answer {
+                request,
+                items,
+                current_idx,
+                ..
+            }
+            | AppState::ExplanationLoading {
+                request,
+                items,
+                current_idx,
+                ..
+            } => {
+                *self = AppState::Question {
+                    request: *request,
+                    items: items.clone(),
+                    current_idx: *current_idx,
+                    start_time: Instant::now(),
+                    duration: Duration::from_secs(60),
+                };
+            }
+            AppState::Explanation { .. } => {
+                self.return_to_answer();
+            }
+            _ => {}
+        }
+    }
+
+    pub fn begin_explanation(&mut self) {
+        if let AppState::Answer {
+            request,
+            items,
+            current_idx,
+            ..
+        } = self
+        {
+            if let Some(item) = items.get(*current_idx) {
+                if let Some(cached) = &item.explanation {
+                    *self = AppState::Explanation {
+                        request: *request,
+                        items: items.clone(),
+                        current_idx: *current_idx,
+                        explanation: cached.clone(),
+                        scroll_offset: 0,
+                    };
+                } else {
+                    *self = AppState::ExplanationLoading {
+                        request: *request,
+                        items: items.clone(),
+                        current_idx: *current_idx,
+                        question: item.question.clone(),
+                        answer: item.answer.clone(),
+                        status: "Loading explanation".to_string(),
+                        started_at: Instant::now(),
+                    };
+                }
+            }
+        }
+    }
+
     pub fn next_step(&mut self) {
         match self {
             AppState::Question {
@@ -498,12 +724,14 @@ impl AppState {
                     request: *request,
                     items: items.clone(),
                     current_idx: *current_idx,
+                    selected_action: AnswerAction::Continue,
                 };
             }
             AppState::Answer {
                 request,
                 items,
                 current_idx,
+                ..
             } => {
                 let next_idx = *current_idx + 1;
                 if next_idx < items.len() {
@@ -536,6 +764,17 @@ pub fn start_background_load(request: TriviaRequest) -> mpsc::Receiver<Backgroun
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let result = fetch_trivia(request);
+        let _ = tx.send((request, result));
+    });
+    rx
+}
+
+pub fn start_background_explanation(
+    request: ExplanationRequest,
+) -> mpsc::Receiver<BackgroundExplanationResult> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = fetch_explanation(&request);
         let _ = tx.send((request, result));
     });
     rx
@@ -582,6 +821,16 @@ fn string_array_schema() -> serde_json::Value {
         "type": "ARRAY",
         "items": {
             "type": "STRING"
+        }
+    })
+}
+
+fn explanation_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "OBJECT",
+        "required": ["explanation"],
+        "properties": {
+            "explanation": { "type": "STRING" }
         }
     })
 }
@@ -657,7 +906,10 @@ fn call_gemini(
 }
 
 fn should_ai_dedup(subject: TriviaSubject) -> bool {
-    matches!(subject, TriviaSubject::Bible | TriviaSubject::FunFacts | TriviaSubject::Riddles)
+    matches!(
+        subject,
+        TriviaSubject::Bible | TriviaSubject::FunFacts | TriviaSubject::Riddles
+    )
 }
 
 fn should_generate_new_batch(subject: TriviaSubject) -> bool {
@@ -676,6 +928,7 @@ fn unique_question_items_from_cache(cached: &[CachedTriviaItem]) -> Vec<TriviaIt
             out.push(TriviaItem {
                 question: item.question.clone(),
                 answer: item.answer.clone(),
+                explanation: None,
             });
         }
     }
@@ -698,6 +951,7 @@ fn unseen_items_from_cache(
             out.push(TriviaItem {
                 question: item.question.clone(),
                 answer: item.answer.clone(),
+                explanation: None,
             });
         }
     }
@@ -1381,6 +1635,57 @@ Output constraints:
     );
     prompt.push_str(&previously_asked_block(cached));
     Ok(prompt)
+}
+
+fn explanation_prompt(request: &ExplanationRequest) -> String {
+    let context = serde_json::to_string_pretty(&serde_json::json!({
+        "question": request.question,
+        "answer": request.answer,
+    }))
+    .unwrap_or_else(|_| {
+        format!(
+            "{{\"question\": {:?}, \"answer\": {:?}}}",
+            request.question, request.answer
+        )
+    });
+
+    format!(
+        "Task: Explain the trivia answer in a clearer, friendlier way.\n\
+Question and answer context:\n{}\n\n\
+Write a concise but helpful explanation that:\n\
+- names the subject plainly,\n\
+- explains why the answer is correct,\n\
+- adds a little extra context or a simple example,\n\
+- stays factual and does not invent details.\n\n\
+Keep it to a few short paragraphs so it is easy to scroll on a small screen.\n\
+Return only valid JSON with a single string field named 'explanation'.",
+        context
+    )
+}
+
+fn fetch_explanation(request: &ExplanationRequest) -> Result<String, String> {
+    let api_key = std::env::var("GOOGLE_API_KEY")
+        .map_err(|_| "GOOGLE_API_KEY environment variable is not set. Export it in your shell: export GOOGLE_API_KEY='...'".to_string())?;
+
+    let client = Client::builder()
+        .user_agent("Kiosk-Trivia/1.0")
+        .build()
+        .unwrap_or_else(|_| Client::new());
+
+    let prompt = explanation_prompt(request);
+    let text = call_gemini(&client, &api_key, &prompt, explanation_schema())?;
+
+    #[derive(Deserialize)]
+    struct ExplanationResponse {
+        explanation: String,
+    }
+
+    let parsed = parse_gemini_json::<ExplanationResponse>(&text)?;
+    if parsed.explanation.trim().is_empty() {
+        return Err("Model returned an empty explanation.".to_string());
+    }
+
+    Ok(parsed.explanation)
 }
 
 // ---------------------------------------------------------------------------

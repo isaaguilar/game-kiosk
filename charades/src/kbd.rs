@@ -58,9 +58,7 @@ impl Keyboard {
 
             // Check supported event types (4-byte bitmask)
             let mut evtypes = [0u8; 4];
-            let r = unsafe {
-                libc::ioctl(fd, EVIOCGBIT_TYPES as _, evtypes.as_mut_ptr())
-            };
+            let r = unsafe { libc::ioctl(fd, EVIOCGBIT_TYPES as _, evtypes.as_mut_ptr()) };
             if r < 0 || !bit_is_set(&evtypes, EV_KEY as usize) {
                 unsafe { libc::close(fd) };
                 continue;
@@ -79,13 +77,7 @@ impl Keyboard {
         for &fd in &self.fds {
             loop {
                 let mut ev: InputEvent = unsafe { std::mem::zeroed() };
-                let n = unsafe {
-                    libc::read(
-                        fd,
-                        &mut ev as *mut _ as *mut libc::c_void,
-                        ev_bytes,
-                    )
-                };
+                let n = unsafe { libc::read(fd, &mut ev as *mut _ as *mut libc::c_void, ev_bytes) };
                 if n != ev_bytes as libc::ssize_t {
                     break; // WouldBlock or error — nothing more to read
                 }

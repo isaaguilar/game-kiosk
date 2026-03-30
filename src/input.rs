@@ -37,4 +37,3 @@ pub fn handle_keys(keys: &[AppKey], state: &mut AppState) -> Action {
     }
     Action::None
 }
-

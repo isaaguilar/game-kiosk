@@ -61,10 +61,7 @@ impl X11Backend {
 
         // Map the window and force it to the top of the X11 stack
         conn.map_window(win)?;
-        conn.configure_window(
-            win,
-            &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
-        )?;
+        conn.configure_window(win, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
         conn.flush()?;
 
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -83,8 +80,14 @@ impl X11Backend {
 
         // Apply an explicit transparent cursor to both our window and root.
         let hidden_cursor = create_invisible_cursor(&conn, root)?;
-        conn.change_window_attributes(win, &ChangeWindowAttributesAux::new().cursor(hidden_cursor))?;
-        conn.change_window_attributes(root, &ChangeWindowAttributesAux::new().cursor(hidden_cursor))?;
+        conn.change_window_attributes(
+            win,
+            &ChangeWindowAttributesAux::new().cursor(hidden_cursor),
+        )?;
+        conn.change_window_attributes(
+            root,
+            &ChangeWindowAttributesAux::new().cursor(hidden_cursor),
+        )?;
 
         // Also grab the pointer with that transparent cursor while we run.
         let pointer_status = conn
@@ -153,10 +156,7 @@ impl X11Backend {
             let start = y * w;
             let end = start + chunk_h * w;
             let data: &[u8] = unsafe {
-                std::slice::from_raw_parts(
-                    buf[start..end].as_ptr() as *const u8,
-                    (end - start) * 4,
-                )
+                std::slice::from_raw_parts(buf[start..end].as_ptr() as *const u8, (end - start) * 4)
             };
             let _ = self.conn.put_image(
                 ImageFormat::Z_PIXMAP,
@@ -242,7 +242,7 @@ fn x11_keycode_to_appkey(code: u8) -> Option<AppKey> {
         25 => Some(AppKey::Up),       // W
         36 => Some(AppKey::Confirm),  // Return
         40 => Some(AppKey::Right),    // D
-        39 => Some(AppKey::Down),     // S
+        39 => Some(AppKey::SeeQuestion), // S
         65 => Some(AppKey::Confirm),  // Space
         104 => Some(AppKey::Confirm), // KP_Enter
         113 => Some(AppKey::Left),    // Left
