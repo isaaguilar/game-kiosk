@@ -242,7 +242,7 @@ fn x11_keycode_to_appkey(code: u8) -> Option<AppKey> {
         25 => Some(AppKey::Up),       // W
         36 => Some(AppKey::Confirm),  // Return
         40 => Some(AppKey::Right),    // D
-        39 => Some(AppKey::SeeQuestion), // S
+        39 => Some(AppKey::StepBack), // S
         65 => Some(AppKey::Confirm),  // Space
         104 => Some(AppKey::Confirm), // KP_Enter
         113 => Some(AppKey::Left),    // Left

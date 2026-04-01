@@ -538,7 +538,7 @@ impl AppState {
     }
 
     pub fn apply_explanation_result(&mut self, load: BackgroundExplanationResult) {
-        let (request, result) = load;
+        let (_request, result) = load;
         match result {
             Ok(explanation) => {
                 if let AppState::ExplanationLoading {
@@ -563,12 +563,51 @@ impl AppState {
                     };
                 }
             }
-            Err(message) => {
-                *self = AppState::Error {
-                    request: request.request,
-                    message,
-                };
+            Err(_message) => {
+                // Gracefully return to Answer screen instead of destroying the game session.
+                if let AppState::ExplanationLoading {
+                    request: trivia_request,
+                    items,
+                    current_idx,
+                    ..
+                } = self
+                {
+                    *self = AppState::Answer {
+                        request: *trivia_request,
+                        items: items.clone(),
+                        current_idx: *current_idx,
+                        selected_action: AnswerAction::Continue,
+                    };
+                }
             }
+        }
+    }
+
+    /// Handle background trivia-load thread crash / channel disconnect.
+    pub fn apply_load_result_disconnected(&mut self) {
+        if let AppState::Loading { request, .. } = self {
+            *self = AppState::Error {
+                request: *request,
+                message: "Background task crashed unexpectedly.".to_string(),
+            };
+        }
+    }
+
+    /// Handle background explanation thread crash / channel disconnect.
+    pub fn apply_explanation_result_disconnected(&mut self) {
+        if let AppState::ExplanationLoading {
+            request: trivia_request,
+            items,
+            current_idx,
+            ..
+        } = self
+        {
+            *self = AppState::Answer {
+                request: *trivia_request,
+                items: items.clone(),
+                current_idx: *current_idx,
+                selected_action: AnswerAction::Continue,
+            };
         }
     }
 
@@ -635,25 +674,8 @@ impl AppState {
     }
 
     pub fn return_to_answer(&mut self) {
-        if let AppState::Explanation {
-            request,
-            items,
-            current_idx,
-            ..
-        } = self
-        {
-            *self = AppState::Answer {
-                request: *request,
-                items: items.clone(),
-                current_idx: *current_idx,
-                selected_action: AnswerAction::Continue,
-            };
-        }
-    }
-
-    pub fn return_to_question(&mut self) {
         match self {
-            AppState::Answer {
+            AppState::Explanation {
                 request,
                 items,
                 current_idx,
@@ -665,16 +687,12 @@ impl AppState {
                 current_idx,
                 ..
             } => {
-                *self = AppState::Question {
+                *self = AppState::Answer {
                     request: *request,
                     items: items.clone(),
                     current_idx: *current_idx,
-                    start_time: Instant::now(),
-                    duration: Duration::from_secs(60),
+                    selected_action: AnswerAction::Continue,
                 };
-            }
-            AppState::Explanation { .. } => {
-                self.return_to_answer();
             }
             _ => {}
         }
@@ -840,19 +858,25 @@ fn parse_gemini_json<T: DeserializeOwned>(text: &str) -> Result<T, String> {
         return Ok(parsed_direct);
     }
 
-    let start = text
-        .find('[')
-        .ok_or_else(|| format!("No JSON array found in response: {}", text))?;
-    let end = text
-        .rfind(']')
-        .ok_or_else(|| format!("No JSON array found in response: {}", text))?;
-    if end <= start {
-        return Err(format!("No JSON array found in response: {}", text));
+    // Try extracting a JSON array
+    if let (Some(s), Some(e)) = (text.find('['), text.rfind(']')) {
+        if e > s {
+            if let Ok(parsed) = serde_json::from_str::<T>(&text[s..=e]) {
+                return Ok(parsed);
+            }
+        }
     }
 
-    let clean_json = &text[start..=end];
-    serde_json::from_str::<T>(clean_json)
-        .map_err(|e| format!("JSON parse error: {} | Body: {}", e, clean_json))
+    // Try extracting a JSON object
+    if let (Some(s), Some(e)) = (text.find('{'), text.rfind('}')) {
+        if e > s {
+            if let Ok(parsed) = serde_json::from_str::<T>(&text[s..=e]) {
+                return Ok(parsed);
+            }
+        }
+    }
+
+    Err(format!("No valid JSON found in response: {}", text))
 }
 
 fn call_gemini(

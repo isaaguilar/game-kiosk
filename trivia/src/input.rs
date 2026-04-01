@@ -8,7 +8,7 @@ pub enum AppKey {
     Right,
     Confirm,      // Enter / Space
     Back,         // Escape / Backspace / Q
-    SeeQuestion,  // S – shows the current question from answer/explanation screens
+    StepBack,     // S – go back one step in the game flow
 }
 
 pub enum Action {
@@ -25,7 +25,7 @@ pub fn handle_keys(
         match state {
             AppState::SubjectMenu { .. } => match key {
                 AppKey::Up => state.move_menu_up(),
-                AppKey::Down | AppKey::SeeQuestion => state.move_menu_down(),
+                AppKey::Down | AppKey::StepBack => state.move_menu_down(),
                 AppKey::Left => state.move_menu_left(),
                 AppKey::Right => state.move_menu_right(),
                 AppKey::Confirm => state.confirm_menu_selection(),
@@ -33,7 +33,7 @@ pub fn handle_keys(
             },
             AppState::NewsCategoryMenu { .. } => match key {
                 AppKey::Up => state.move_menu_up(),
-                AppKey::Down | AppKey::SeeQuestion => state.move_menu_down(),
+                AppKey::Down | AppKey::StepBack => state.move_menu_down(),
                 AppKey::Left => state.move_menu_left(),
                 AppKey::Right => state.move_menu_right(),
                 AppKey::Confirm => state.confirm_menu_selection(),
@@ -66,15 +66,14 @@ pub fn handle_keys(
                 _ => {}
             },
             AppState::Answer { .. } => match key {
-                AppKey::Left | AppKey::Right | AppKey::Up | AppKey::Down => {
+                AppKey::Left | AppKey::Right | AppKey::Up | AppKey::Down | AppKey::StepBack => {
                     state.move_answer_down(); // toggle between two buttons
                 }
                 AppKey::Confirm => state.confirm_answer_selection(),
-                AppKey::SeeQuestion => state.return_to_question(),
                 AppKey::Back => return Action::Quit,
             },
             AppState::ExplanationLoading { .. } => match key {
-                AppKey::Back | AppKey::SeeQuestion => state.return_to_question(),
+                AppKey::Back | AppKey::StepBack => state.return_to_answer(),
                 _ => {}
             },
             AppState::Explanation { .. } => match key {
@@ -85,7 +84,7 @@ pub fn handle_keys(
                         state.return_to_answer();
                     }
                 }
-                AppKey::SeeQuestion | AppKey::Back => state.return_to_answer(),
+                AppKey::StepBack | AppKey::Back => state.return_to_answer(),
                 _ => {}
             },
         }

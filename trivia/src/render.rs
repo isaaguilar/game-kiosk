@@ -292,7 +292,7 @@ impl Renderer {
                         right_cx,
                         btn_y,
                     );
-                    let hint = "Arrow keys switch   Enter/Space activate   S: see question";
+                    let hint = "Arrow/WASD keys switch   Enter/Space activate";
                     self.draw_text_centered(buf, hint, 14.0, cx, self.height - 14, GRAY);
                 } else {
                     self.draw_action_button(
@@ -302,7 +302,7 @@ impl Renderer {
                         cx,
                         btn_y,
                     );
-                    let hint = "Enter/Space: continue   S: see question";
+                    let hint = "Enter/Space: continue";
                     self.draw_text_centered(buf, hint, 14.0, cx, self.height - 14, GRAY);
                 }
             }
@@ -321,7 +321,7 @@ impl Renderer {
                 self.draw_spinner(buf, cx, cy + 50, elapsed_ms);
                 self.draw_text_centered(
                     buf,
-                    "S: see question   Esc: back",
+                    "Esc/S: back to answer",
                     14.0,
                     cx,
                     self.height - 14,
@@ -338,10 +338,12 @@ impl Renderer {
                 let top = 56usize;
                 let bottom = self.height.saturating_sub(40);
                 let max_lines = Some(11);
+                let max_width = self.width.saturating_mul(82) / 100;
                 self.draw_scrollable_text(
                     buf,
                     explanation,
                     20.0,
+                    max_width,
                     cx,
                     top,
                     bottom,
@@ -353,7 +355,7 @@ impl Renderer {
                 let (total_lines, visible_lines) = self.measure_scrollable_text(
                     explanation,
                     20.0,
-                    self.width.saturating_mul(82) / 100,
+                    max_width,
                     top,
                     bottom,
                     max_lines,
@@ -847,6 +849,7 @@ impl Renderer {
         buf: &mut Vec<u32>,
         text: &str,
         size: f32,
+        max_width: usize,
         cx: usize,
         top: usize,
         bottom: usize,
@@ -854,7 +857,6 @@ impl Renderer {
         max_lines: Option<usize>,
         color: u32,
     ) {
-        let max_width = self.width.saturating_mul(82) / 100;
         let lines = self.wrap_text_lines(text, size, max_width);
         let line_height = self.scroll_line_height(size);
         let available_height = bottom.saturating_sub(top);

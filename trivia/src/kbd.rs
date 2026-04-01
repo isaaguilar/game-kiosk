@@ -108,7 +108,7 @@ fn map_key(code: u16) -> Option<AppKey> {
     match code {
         K_UP | K_W => Some(AppKey::Up),
         K_DOWN => Some(AppKey::Down),
-        K_S => Some(AppKey::SeeQuestion),
+        K_S => Some(AppKey::StepBack),
         K_LEFT | K_A => Some(AppKey::Left),
         K_RIGHT | K_D => Some(AppKey::Right),
         K_ENTER | K_KPENTER | K_SPACE => Some(AppKey::Confirm),

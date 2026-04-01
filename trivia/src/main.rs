@@ -33,19 +33,32 @@ fn pump_background_job(state: &mut app::AppState, job: &mut Option<BackgroundJob
     }
 
     if let Some(active_job) = job.as_ref() {
-        match active_job {
-            BackgroundJob::Trivia(rx) => {
-                if let Ok(result) = rx.try_recv() {
+        let finished = match active_job {
+            BackgroundJob::Trivia(rx) => match rx.try_recv() {
+                Ok(result) => {
                     state.apply_load_result(result);
-                    *job = None;
+                    true
                 }
-            }
-            BackgroundJob::Explanation(rx) => {
-                if let Ok(result) = rx.try_recv() {
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    state.apply_load_result_disconnected();
+                    true
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => false,
+            },
+            BackgroundJob::Explanation(rx) => match rx.try_recv() {
+                Ok(result) => {
                     state.apply_explanation_result(result);
-                    *job = None;
+                    true
                 }
-            }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    state.apply_explanation_result_disconnected();
+                    true
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => false,
+            },
+        };
+        if finished {
+            *job = None;
         }
     }
 }
@@ -265,7 +278,7 @@ fn map_minifb_key(k: minifb::Key) -> Option<input::AppKey> {
     match k {
         Key::Up | Key::W => Some(AppKey::Up),
         Key::Down => Some(AppKey::Down),
-        Key::S => Some(AppKey::SeeQuestion),
+        Key::S => Some(AppKey::StepBack),
         Key::Left | Key::A => Some(AppKey::Left),
         Key::Right | Key::D => Some(AppKey::Right),
         Key::Enter | Key::Space => Some(AppKey::Confirm),
