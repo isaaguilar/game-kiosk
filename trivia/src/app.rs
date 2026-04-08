@@ -1,4 +1,3 @@
-use chrono::Local;
 use rand::seq::SliceRandom;
 use reqwest::blocking::Client;
 use serde::de::DeserializeOwned;
@@ -9,10 +8,9 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-const ROUND_SIZE_BIBLE_FUN_FACTS: usize = 21;
+const ROUND_SIZE_BIBLE_FUN_FACTS: usize = 20;
 const ROUND_SIZE_RIDDLES: usize = 10;
-const ROUND_SIZE_DEFAULT: usize = 5;
-const CACHE_TTL_SECS: i64 = 14 * 24 * 60 * 60;
+const CACHE_TTL_SECS: i64 = 7 * 24 * 60 * 60;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TriviaItem {
@@ -32,7 +30,6 @@ struct CachedTriviaItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TriviaSubject {
     Bible,
-    RecentNews,
     FunFacts,
     Riddles,
 }
@@ -41,7 +38,6 @@ impl TriviaSubject {
     pub fn label(self) -> &'static str {
         match self {
             TriviaSubject::Bible => "Bible",
-            TriviaSubject::RecentNews => "Recent News",
             TriviaSubject::FunFacts => "Fun Facts",
             TriviaSubject::Riddles => "Riddles",
         }
@@ -50,7 +46,6 @@ impl TriviaSubject {
     pub fn all() -> Vec<TriviaSubject> {
         vec![
             TriviaSubject::Bible,
-            TriviaSubject::RecentNews,
             TriviaSubject::FunFacts,
             TriviaSubject::Riddles,
         ]
@@ -61,71 +56,21 @@ impl TriviaSubject {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum NewsCategory {
-    All,
-    ScienceTechnology,
-    Entertainment,
-    Politics,
-}
-
-impl NewsCategory {
-    pub fn label(self) -> &'static str {
-        match self {
-            NewsCategory::All => "All",
-            NewsCategory::ScienceTechnology => "Science + Technology",
-            NewsCategory::Entertainment => "Entertainment",
-            NewsCategory::Politics => "Politics",
-        }
-    }
-
-    pub fn all() -> Vec<NewsCategory> {
-        vec![
-            NewsCategory::All,
-            NewsCategory::ScienceTechnology,
-            NewsCategory::Entertainment,
-            NewsCategory::Politics,
-        ]
-    }
-
-    fn search_query(self) -> &'static str {
-        match self {
-            NewsCategory::All => "(weird OR bizarre OR funny OR odd OR unexpected OR unusual OR offbeat OR quirky)",
-            NewsCategory::ScienceTechnology => "(science OR technology OR AI OR space OR robotics) AND (weird OR funny OR odd OR surprising)",
-            NewsCategory::Entertainment => "(entertainment OR celebrity OR movie OR music OR tv) AND (weird OR funny OR awkward OR bizarre)",
-            NewsCategory::Politics => "(politics OR election OR congress OR senate OR government) AND (unexpected OR odd OR surprising)",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TriviaRequest {
     pub subject: TriviaSubject,
-    pub news_category: Option<NewsCategory>,
 }
 
 impl TriviaRequest {
     fn for_bible() -> Self {
         Self {
             subject: TriviaSubject::Bible,
-            news_category: None,
-        }
-    }
-
-    fn for_recent_news(category: NewsCategory) -> Self {
-        Self {
-            subject: TriviaSubject::RecentNews,
-            news_category: Some(category),
         }
     }
 
     pub fn menu_title(self) -> String {
         match self.subject {
             TriviaSubject::Bible => "Bible".to_string(),
-            TriviaSubject::RecentNews => {
-                let cat = self.news_category.map(|c| c.label()).unwrap_or("All");
-                format!("Recent News ({})", cat)
-            }
             TriviaSubject::FunFacts => "Fun Facts".to_string(),
             TriviaSubject::Riddles => "Riddles".to_string(),
         }
@@ -134,10 +79,6 @@ impl TriviaRequest {
     pub fn loading_status(self) -> String {
         match self.subject {
             TriviaSubject::Bible => "Loading Bible questions".to_string(),
-            TriviaSubject::RecentNews => {
-                let cat = self.news_category.map(|c| c.label()).unwrap_or("All");
-                format!("Loading Recent News [{}]", cat)
-            }
             TriviaSubject::FunFacts => "Loading Fun Facts".to_string(),
             TriviaSubject::Riddles => "Loading Riddles".to_string(),
         }
@@ -146,7 +87,6 @@ impl TriviaRequest {
 
 #[derive(Debug, Clone)]
 pub struct ExplanationRequest {
-    pub request: TriviaRequest,
     pub question: String,
     pub answer: String,
 }
@@ -193,58 +133,6 @@ struct Part {
     text: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct NewsApiResponse {
-    status: String,
-    articles: Vec<NewsArticle>,
-    message: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NewsArticle {
-    source: NewsSource,
-    title: String,
-    description: Option<String>,
-    url: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NewsSource {
-    id: Option<String>,
-    name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct NewsContextItem {
-    source: String,
-    title: String,
-    description: Option<String>,
-    url: Option<String>,
-}
-
-const US_TOP_SOURCE_IDS: [&str; 20] = [
-    "abc-news",
-    "associated-press",
-    "axios",
-    "bloomberg",
-    "business-insider",
-    "cbs-news",
-    "cnn",
-    "fox-news",
-    "google-news",
-    "msnbc",
-    "nbc-news",
-    "newsweek",
-    "politico",
-    "reuters",
-    "the-hill",
-    "the-new-york-times",
-    "the-washington-post",
-    "the-wall-street-journal",
-    "time",
-    "usa-today",
-];
-
 pub type BackgroundLoadResult = (TriviaRequest, Result<Vec<TriviaItem>, String>);
 pub type BackgroundExplanationResult = (ExplanationRequest, Result<String, String>);
 
@@ -256,10 +144,6 @@ pub enum PendingBackgroundJob {
 pub enum AppState {
     SubjectMenu {
         subjects: Vec<TriviaSubject>,
-        selected: usize,
-    },
-    NewsCategoryMenu {
-        categories: Vec<NewsCategory>,
         selected: usize,
     },
     Loading {
@@ -326,12 +210,10 @@ impl AppState {
         match self {
             AppState::Loading { request, .. } => Some(PendingBackgroundJob::Trivia(*request)),
             AppState::ExplanationLoading {
-                request,
                 question,
                 answer,
                 ..
             } => Some(PendingBackgroundJob::Explanation(ExplanationRequest {
-                request: *request,
                 question: question.clone(),
                 answer: answer.clone(),
             })),
@@ -347,19 +229,6 @@ impl AppState {
                 }
                 *selected = if *selected == 0 {
                     subjects.len() - 1
-                } else {
-                    *selected - 1
-                };
-            }
-            AppState::NewsCategoryMenu {
-                categories,
-                selected,
-            } => {
-                if categories.is_empty() {
-                    return;
-                }
-                *selected = if *selected == 0 {
-                    categories.len() - 1
                 } else {
                     *selected - 1
                 };
@@ -380,19 +249,6 @@ impl AppState {
                     *selected - 1
                 };
             }
-            AppState::NewsCategoryMenu {
-                categories,
-                selected,
-            } => {
-                if categories.is_empty() {
-                    return;
-                }
-                *selected = if *selected == 0 {
-                    categories.len() - 1
-                } else {
-                    *selected - 1
-                };
-            }
             _ => {}
         }
     }
@@ -405,15 +261,6 @@ impl AppState {
                 }
                 *selected = (*selected + 1) % subjects.len();
             }
-            AppState::NewsCategoryMenu {
-                categories,
-                selected,
-            } => {
-                if categories.is_empty() {
-                    return;
-                }
-                *selected = (*selected + 1) % categories.len();
-            }
             _ => {}
         }
     }
@@ -425,15 +272,6 @@ impl AppState {
                     return;
                 }
                 *selected = (*selected + 1) % subjects.len();
-            }
-            AppState::NewsCategoryMenu {
-                categories,
-                selected,
-            } => {
-                if categories.is_empty() {
-                    return;
-                }
-                *selected = (*selected + 1) % categories.len();
             }
             _ => {}
         }
@@ -455,16 +293,9 @@ impl AppState {
                             started_at: Instant::now(),
                         };
                     }
-                    TriviaSubject::RecentNews => {
-                        *self = AppState::NewsCategoryMenu {
-                            categories: NewsCategory::all(),
-                            selected: 0,
-                        };
-                    }
                     TriviaSubject::FunFacts => {
                         let request = TriviaRequest {
                             subject: TriviaSubject::FunFacts,
-                            news_category: None,
                         };
                         *self = AppState::Loading {
                             request,
@@ -475,7 +306,6 @@ impl AppState {
                     TriviaSubject::Riddles => {
                         let request = TriviaRequest {
                             subject: TriviaSubject::Riddles,
-                            news_category: None,
                         };
                         *self = AppState::Loading {
                             request,
@@ -485,21 +315,6 @@ impl AppState {
                     }
                 }
             }
-            AppState::NewsCategoryMenu {
-                categories,
-                selected,
-            } => {
-                if categories.is_empty() {
-                    return;
-                }
-                let category = categories[*selected];
-                let request = TriviaRequest::for_recent_news(category);
-                *self = AppState::Loading {
-                    request,
-                    status: request.loading_status(),
-                    started_at: Instant::now(),
-                };
-            }
             _ => {}
         }
     }
@@ -507,13 +322,6 @@ impl AppState {
     pub fn return_to_subject_menu(&mut self) {
         *self = AppState::SubjectMenu {
             subjects: TriviaSubject::all(),
-            selected: 0,
-        };
-    }
-
-    pub fn return_to_news_category_menu(&mut self) {
-        *self = AppState::NewsCategoryMenu {
-            categories: NewsCategory::all(),
             selected: 0,
         };
     }
@@ -798,19 +606,10 @@ pub fn start_background_explanation(
     rx
 }
 
-fn cache_threshold(subject: TriviaSubject) -> usize {
-    match subject {
-        TriviaSubject::Riddles => 10,
-        TriviaSubject::RecentNews => 100,
-        _ => 1000,
-    }
-}
-
 fn round_size(subject: TriviaSubject) -> usize {
     match subject {
         TriviaSubject::Bible | TriviaSubject::FunFacts => ROUND_SIZE_BIBLE_FUN_FACTS,
         TriviaSubject::Riddles => ROUND_SIZE_RIDDLES,
-        TriviaSubject::RecentNews => ROUND_SIZE_DEFAULT,
     }
 }
 
@@ -1207,8 +1006,10 @@ fn fetch_trivia(request: TriviaRequest) -> Result<Vec<TriviaItem>, String> {
         persist_trivia_cache(&path, &cached);
     }
 
+    let unseen = unseen_items_from_cache(&cached, &seen);
+
     if should_ai_dedup(request.subject)
-        && cached.len() >= cache_threshold(request.subject)
+        && unseen.len() >= round_size
         && !should_generate_new_batch(request.subject)
     {
         return Ok(select_round_from_cache(&cached, &seen, round_size));
@@ -1242,21 +1043,12 @@ fn fetch_trivia(request: TriviaRequest) -> Result<Vec<TriviaItem>, String> {
         }
     }
 
-    // Recent News still uses the old flow and round-size.
-    if !should_ai_dedup(request.subject) && cached.len() >= cache_threshold(request.subject) {
-        return Ok(pick_random_items(
-            &unique_question_items_from_cache(&cached),
-            round_size,
-        ));
-    }
-
     let cached_trivia = unique_question_items_from_cache(&cached);
     let base_prompt = match request.subject {
         TriviaSubject::Bible => {
             let (books, chapters) = get_bible_scope()?;
             bible_prompt(&cached_trivia, &books, &chapters)
         }
-        TriviaSubject::RecentNews => recent_news_prompt(&client, request, &cached_trivia)?,
         TriviaSubject::FunFacts => {
             let domains = get_domains()?;
             fun_facts_prompt(&cached_trivia, &domains)
@@ -1365,35 +1157,29 @@ fn bible_prompt(cached: &[TriviaItem], books: &[String], chapters: &[String]) ->
 
     let mut prompt = r#"
 Task:
-Generate exactly 100 difficult, highly diverse, 'Wait Wait... Don't Tell Me!' style Bible trivia questions.
-The humor should be light, but the underlying facts must be challenging and rooted in lesser-known details.
+Generate exactly 100 unique, highly challenging Bible trivia questions rooted in deep textual facts from the King James Bible.
 
-Content rules:
+Difficulty Level:
+- Target Audience: Seasoned Christians with deep knowledge of the biblical text.
+- Challenge: Focus on obscure verses, minor characters, specific numbers, unusual laws, rare events, and overlooked narrative details. Avoid surface-level stories (e.g., the Nativity, the Flood, David vs Goliath) unless asking about an extremely niche technical detail of the account.
+
+Style Guidelines:
+- Format: Use a professional, direct trivia-competition style (Jeopardy-like).
+- Clarity: Questions must be sharp, factual, and free of conversational filler, "witty" setups, or humorous framing.
+- Answers: Answers should be concise but can be phrases or names as required by the text. Avoid unnecessary explanations unless required for identification.
+
+Content Rules:
 - All facts must come directly from the King James Bible.
-- Prioritize obscure verses, minor characters, unusual laws, strange events, and overlooked narrative details.
-- Avoid any story, character, or theme that appears in the cached list.
-- Avoid all high-frequency trivia topics (Creation, Flood, Exodus, David, Solomon, Daniel, Jonah, Nativity, Crucifixion, Resurrection).
-- Avoid adjacent repeats: do not reuse the same book, character, or narrative cluster more than once.
-- Use the following randomly selected scope for this run:
-    * Books focus (5 random books): __BOOKS__
-    * Chapter focus (20 random Book:Chapter targets, chapters only): __CHAPTERS__
-- For each question, choose scope from either the selected books OR the selected Book:Chapter targets.
-- Do not use verses in scope selection.
-
-Difficulty rules:
-- Each question must hinge on a detail that is *not* widely known.
-- Prefer specifics: numbers, names, locations, odd commands, unusual phrasing, rare events.
 - No paraphrasing: the fact must be verifiable word-for-word in the KJV.
-- No two questions may rely on similar types of facts (e.g., no two “who said this?” or “which king did X?”).
+- Use the following randomly selected scope for this run to ensure diversity:
+    * Books focus (5 random books): __BOOKS__
+    * Chapter focus (20 random Book:Chapter targets): __CHAPTERS__
+- For each question, choose a fact from either the selected books OR the selected Book:Chapter targets.
 
-Style rules:
-- Humor should come from the framing, not from altering the biblical fact.
-- Keep questions accessible but intellectually demanding.
-
-Output rules:
-- Return ONLY a JSON array of exactly 100 objects.
-- Each object must contain fields 'question' and 'answer'.
-- No markdown, no commentary, no code fences.
+Novelty Rules:
+- Do NOT repeat or reuse ANY previously asked question in ANY form.
+- Do NOT reuse the same underlying fact, event, or character detail.
+- Treat all previously asked questions as permanently banned concepts.
 "#
     .replace("__BOOKS__", &books_list)
     .replace("__CHAPTERS__", &chapters_list);
@@ -1499,39 +1285,42 @@ fn fun_facts_prompt(cached: &[TriviaItem], domains: &[String]) -> String {
     let mut prompt = format!(
         r#"
 Task:
-Generate exactly 100 intellectually stimulating, real-world trivia questions with concise answers.
-The tone should feel playful and sharp, like a strong public-radio trivia segment, but the substance should be genuinely challenging.
+Generate exactly 100 unique, intellectually stimulating trivia questions based on the provided domain list.
 
-Content rules:
-- All facts must be true, verifiable, and non-exaggerated.
-- Use a wide variety of domains from the following list: {domain_list}.
-- Each question must come from a different domain whenever possible.
-- If the domain list contains fewer than 100 items, cycle through them but do NOT reuse the same fact type, idea, or concept.
-- Every question must require genuine thought. Avoid anything answerable by broad common knowledge alone.
-- No question should feel obvious, classroom-basic, or like a generic children's fact book.
-- Hard questions must still be age-appropriate and understandable once answered.
-- Avoid violent, sexual, disturbing, or fear-based content.
+Difficulty Level:
+- Target Audience: 10th-grade education level and up.
+- Challenge: Questions must be genuinely difficult. Avoid common knowledge, obvious answers, or basic pop culture. Aim for questions that would challenge educated adults in a competitive trivia setting.
 
-Difficulty rules:
-- Roughly 25% should be counterintuitive or surprising facts that most people would initially guess wrong.
-- Roughly 25% should be quantitative or comparative: bigger/smaller, older/newer, faster/slower, longer/shorter, higher/lower, earlier/later.
-- Roughly 25% should require multi-step reasoning, not mere recall.
-- Roughly 25% should be deep-cut facts from science, history, geography, language, nature, engineering, or human culture.
-- Prefer specifics: numbers, dates, names, rankings, measurements, durations, distances, and unusual constraints.
-- Answers must be precise, not vague.
-- Aim for questions that fewer than 30% of adults would answer correctly without thinking.
+Style Guidelines:
+- Format: Use a professional, trivia-competition style (similar to Jeopardy! or Trivial Pursuit).
+- Clarity: Questions must be direct and unambiguous. Avoid conversational filler or 'witty' setups.
+- Answers: Answers should be concise. While they can be phrases if absolutely necessary for accuracy, prefer proper nouns, specific dates, or specific scientific terms.
 
-Novelty rules:
+Anti-Stupidity & Anti-Definition Rules:
+- NEVER write a question that asks for the definition, purpose, or functional description of a common object. Do NOT ask "What is X?" or "What is X used for?".
+- Answers must NEVER be a descriptive phrase or a functional explanation (e.g., "a projectile designed for impact").
+- The answer must not be a word that is already contained within the question, and the question must not be a generic synonym of the answer.
+- CRITICAL EXAMPLE OF WHAT NOT TO DO:
+  * BAD QUESTION: "What is a pellet used for in a pellet gun?" (Answer: "A projectile for aerodynamic stability.") -> REASON: It is a functional definition of a common object with a descriptive answer.
+  * GOOD QUESTION: "In 1886, William F. Markham invented this specific type of spring-piston air gun, made largely of maple wood, to sell alongside his wooden cisterns." (Answer: "The Daisy BB Gun.") -> REASON: It asks for a specific proper noun based on a historical fact.
+
+Content Categories (Ensure a balanced mix of the following):
+- Counterintuitive: Common misconceptions or surprising truths that most people would initially guess wrong.
+- Quantitative: Specific measurements, dates, records, rankings, or durations.
+- Logical Deduction: Facts that can be reasoned through via context clues and multi-step thought, not just recall.
+- Academic/Niche: Deep-cut history, science, geography, arts, and human culture.
+
+Domain Rules:
+- Primary Source: Use the following list as a foundation for diversity: {domain_list}.
+- Expansion: You ARE encouraged to expand beyond this list. Incorporate history, famous people, significant places, and events not explicitly listed, provided they fit the categories above.
+- Variety: Each question should ideally tackle a different specific topic or conceptual cluster.
+- Safety: Avoid violent, sexual, disturbing, or fear-based content.
+
+Novelty Rules:
 - Do NOT repeat or reuse ANY previously asked question in ANY form.
 - Do NOT reuse the same underlying fact, idea, theme, event, concept, or data point.
 - Do NOT create a question that is a rephrasing, variation, or semantic equivalent of any previously asked question.
-- Do NOT use the same source material, topic cluster, or conceptual category as any previously asked item.
 - Treat all previously asked questions as permanently banned concepts.
-
-Output rules:
-- Return ONLY a JSON array of exactly 100 objects.
-- Each object must contain fields 'question' and 'answer'.
-- No markdown, no commentary, no code fences.
 "#
     );
 
@@ -1601,66 +1390,6 @@ Output Rules:
     prompt
 }
 
-fn recent_news_prompt(
-    client: &Client,
-    request: TriviaRequest,
-    cached: &[TriviaItem],
-) -> Result<String, String> {
-    let category = request.news_category.ok_or_else(|| {
-        "Recent News request missing category. Return to menu and select a category.".to_string()
-    })?;
-
-    let selected = fetch_recent_news_items(client, category)?;
-
-    if selected.len() < 5 {
-        return Err(format!(
-            "{} did not have enough usable stories. Try another category.",
-            category.label()
-        ));
-    }
-
-    let today = Local::now().format("%Y-%m-%d").to_string();
-    let mut context = String::new();
-    for (idx, item) in selected.iter().enumerate() {
-        let summary = item
-            .description
-            .as_deref()
-            .unwrap_or("No summary available");
-        let url = item.url.as_deref().unwrap_or("(no url)");
-        context.push_str(&format!(
-            "{}. [{}] {} - {} ({})\n",
-            idx + 1,
-            item.source,
-            item.title,
-            summary,
-            url
-        ));
-    }
-
-    let mut prompt = format!(
-        "Task: Generate exactly 5 funny 'Wait Wait... Don't Tell Me!' style trivia questions about current events.
-Today: {}.
-Category: {}.
-
-Use ONLY the stories listed below.
-Do not use outside knowledge.
-Do not invent details.
-Write one trivia item per story.
-
-Stories:
-{}
-
-Output constraints:
-- Return ONLY a JSON array of exactly 5 objects with fields 'question' and 'answer'.
-- No markdown, no prose, no extra fields.",
-        today,
-        category.label(),
-        context
-    );
-    prompt.push_str(&previously_asked_block(cached));
-    Ok(prompt)
-}
-
 fn explanation_prompt(request: &ExplanationRequest) -> String {
     let context = serde_json::to_string_pretty(&serde_json::json!({
         "question": request.question,
@@ -1728,13 +1457,6 @@ fn cache_file_path(request: TriviaRequest) -> Result<PathBuf, String> {
         TriviaSubject::Bible => "bible.json".to_string(),
         TriviaSubject::FunFacts => "fun-facts.json".to_string(),
         TriviaSubject::Riddles => "riddles.json".to_string(),
-        TriviaSubject::RecentNews => {
-            let cat = request
-                .news_category
-                .map(|c| c.label().to_ascii_lowercase().replace(' ', "-"))
-                .unwrap_or_else(|| "all".to_string());
-            format!("recent-news-{}.json", cat)
-        }
     };
 
     dir.push(file_name);
@@ -1786,7 +1508,6 @@ fn seen_file_path(request: TriviaRequest) -> Option<PathBuf> {
         TriviaSubject::Bible => "bible-seen.json",
         TriviaSubject::FunFacts => "fun-facts-seen.json",
         TriviaSubject::Riddles => "riddles-seen.json",
-        TriviaSubject::RecentNews => return None,
     };
 
     dir.push(file_name);
@@ -1828,173 +1549,3 @@ fn mark_question_seen_on_display(request: TriviaRequest, question: &str) {
     persist_seen_questions(&path, &seen);
 }
 
-// ---------------------------------------------------------------------------
-// News article cache — fetch once from NewsAPI, cache to disk, reuse until stale
-// ---------------------------------------------------------------------------
-
-const NEWS_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60; // 24 hours
-
-fn news_cache_path(category: NewsCategory) -> Result<PathBuf, String> {
-    let home = std::env::var("HOME")
-        .map_err(|_| "HOME is not set; unable to build news cache path".to_string())?;
-    let mut dir = PathBuf::from(home);
-    dir.push(".config");
-    dir.push("games-kiosk");
-    dir.push("trivia-cache");
-    let cat = category.label().to_ascii_lowercase().replace(' ', "-");
-    dir.push(format!("news-articles-{}.json", cat));
-    Ok(dir)
-}
-
-fn load_news_cache(path: &PathBuf) -> Option<Vec<NewsContextItem>> {
-    let metadata = fs::metadata(path).ok()?;
-    let modified = metadata.modified().ok()?;
-    let age = modified.elapsed().ok()?;
-    if age.as_secs() > NEWS_CACHE_MAX_AGE_SECS {
-        return None; // stale
-    }
-    let contents = fs::read_to_string(path).ok()?;
-    serde_json::from_str::<Vec<NewsContextItem>>(&contents).ok()
-}
-
-fn persist_news_cache(path: &PathBuf, items: &[NewsContextItem]) {
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(json) = serde_json::to_string_pretty(items) {
-        let _ = fs::write(path, json);
-    }
-}
-
-fn fetch_recent_news_items(
-    client: &Client,
-    category: NewsCategory,
-) -> Result<Vec<NewsContextItem>, String> {
-    let path = news_cache_path(category)?;
-
-    // Use cached articles if fresh
-    if let Some(articles) = load_news_cache(&path) {
-        let mut picked = articles;
-        let mut rng = rand::rng();
-        picked.shuffle(&mut rng);
-        picked.truncate(5);
-        return Ok(picked);
-    }
-
-    // Not cached or stale — fetch from NewsAPI (page 1 only, up to 100)
-    let news_key = std::env::var("NEWS_API_KEY").map_err(|_| {
-        "NEWS_API_KEY is not set for Recent News mode. Choose Bible or set NEWS_API_KEY in trivia.env.".to_string()
-    })?;
-
-    let sources_csv = US_TOP_SOURCE_IDS.join(",");
-    let mut merged = Vec::new();
-
-    let us_query: Vec<(&str, String)> = vec![
-        ("pageSize", "100".to_string()),
-        ("page", "1".to_string()),
-        ("sources", sources_csv),
-        ("q", category.search_query().to_string()),
-        ("sortBy", "publishedAt".to_string()),
-        ("language", "en".to_string()),
-    ];
-    merged.extend(fetch_everything(client, &news_key, &us_query)?);
-
-    let mx_query: Vec<(&str, String)> = vec![
-        ("pageSize", "100".to_string()),
-        ("page", "1".to_string()),
-        (
-            "q",
-            format!(
-                "({}) AND (Mexico OR Mexicano OR mexicana OR CDMX OR Monterrey OR Guadalajara)",
-                category.search_query()
-            ),
-        ),
-        ("sortBy", "publishedAt".to_string()),
-        ("language", "es".to_string()),
-    ];
-    merged.extend(fetch_everything(client, &news_key, &mx_query)?);
-
-    // Dedup by title
-    let mut dedup = Vec::new();
-    let mut seen_titles = HashSet::new();
-    for item in merged {
-        let key = item.title.to_lowercase();
-        if seen_titles.insert(key) {
-            dedup.push(item);
-        }
-    }
-
-    if dedup.len() < 5 {
-        return Err(format!(
-            "Not enough usable articles for {}. Try another category.",
-            category.label()
-        ));
-    }
-
-    // Persist to disk
-    persist_news_cache(&path, &dedup);
-
-    // Return 5 random from the full set
-    let mut rng = rand::rng();
-    dedup.shuffle(&mut rng);
-    Ok(dedup.into_iter().take(5).collect())
-}
-
-fn fetch_everything(
-    client: &Client,
-    news_key: &str,
-    query: &[(&str, String)],
-) -> Result<Vec<NewsContextItem>, String> {
-    let res = client
-        .get("https://newsapi.org/v2/everything")
-        .query(query)
-        .header("X-Api-Key", news_key)
-        .send()
-        .map_err(|e| format!("Failed to fetch news articles: {}", e))?;
-
-    if !res.status().is_success() {
-        let status = res.status();
-        let body = res.text().unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(format!("News API everything error ({}): {}", status, body));
-    }
-
-    let parsed: NewsApiResponse = res
-        .json()
-        .map_err(|e| format!("News API parse error: {}", e))?;
-
-    if parsed.status != "ok" {
-        return Err(format!(
-            "News API returned status '{}': {}",
-            parsed.status,
-            parsed
-                .message
-                .unwrap_or_else(|| "Unknown news API error".to_string())
-        ));
-    }
-
-    let mut out = Vec::new();
-    for article in parsed.articles {
-        if article.title.trim().is_empty() || article.title == "[Removed]" {
-            continue;
-        }
-
-        let source = article
-            .source
-            .name
-            .or(article.source.id)
-            .unwrap_or_else(|| "Unknown source".to_string());
-
-        let description = article
-            .description
-            .map(|s| s.trim().chars().take(200).collect::<String>());
-
-        out.push(NewsContextItem {
-            source,
-            title: article.title,
-            description,
-            url: article.url,
-        });
-    }
-
-    Ok(out)
-}

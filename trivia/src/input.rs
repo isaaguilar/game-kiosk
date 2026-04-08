@@ -31,27 +31,15 @@ pub fn handle_keys(
                 AppKey::Confirm => state.confirm_menu_selection(),
                 AppKey::Back => return Action::Quit,
             },
-            AppState::NewsCategoryMenu { .. } => match key {
-                AppKey::Up => state.move_menu_up(),
-                AppKey::Down | AppKey::StepBack => state.move_menu_down(),
-                AppKey::Left => state.move_menu_left(),
-                AppKey::Right => state.move_menu_right(),
-                AppKey::Confirm => state.confirm_menu_selection(),
-                AppKey::Back => state.return_to_subject_menu(),
-            },
             AppState::Loading { .. } => match key {
                 AppKey::Back => {
                     state.return_to_subject_menu();
                 }
                 _ => {}
             },
-            AppState::Error { request, .. } => match key {
+            AppState::Error { .. } => match key {
                 AppKey::Confirm | AppKey::Back => {
-                    if request.subject == crate::app::TriviaSubject::RecentNews {
-                        state.return_to_news_category_menu();
-                    } else {
-                        state.return_to_subject_menu();
-                    }
+                    state.return_to_subject_menu();
                 }
                 _ => {}
             },

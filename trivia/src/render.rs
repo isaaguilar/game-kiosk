@@ -80,52 +80,6 @@ impl Renderer {
                     GRAY,
                 );
             }
-            AppState::NewsCategoryMenu {
-                categories,
-                selected,
-            } => {
-                self.draw_text_centered(buf, "RECENT NEWS", 62.0, cx, self.height / 5, WHITE);
-                self.draw_text_centered(buf, "Choose a Category", 28.0, cx, self.height / 3, GRAY);
-
-                let item_size = 30.0_f32;
-                let area_top = self.height * 2 / 5;
-                let area_bottom = self.height * 17 / 20;
-                let pad_x = 20usize;
-                let pad_y = 8usize;
-                let max_label_h = categories
-                    .iter()
-                    .map(|category| self.measure_text(category.label(), item_size).1)
-                    .max()
-                    .unwrap_or(item_size as usize);
-                let min_gap = 14usize;
-                let step = (max_label_h + 2 * pad_y + min_gap).max(1);
-                let total_span = step.saturating_mul(categories.len().saturating_sub(1));
-                let available = area_bottom.saturating_sub(area_top);
-                let start_y = area_top + available.saturating_sub(total_span) / 2;
-
-                for (idx, category) in categories.iter().enumerate() {
-                    let y = start_y + step * idx;
-                    let label = category.label();
-                    let color = if idx == *selected { YELLOW } else { WHITE };
-                    self.draw_text_centered(buf, label, item_size, cx, y, color);
-                    if idx == *selected {
-                        let (tw, th) = self.measure_text(label, item_size);
-                        let x0 = cx.saturating_sub(tw / 2 + pad_x);
-                        let y0 = y.saturating_sub(th / 2 + pad_y);
-                        let x1 = (cx + tw / 2 + pad_x).min(self.width - 1);
-                        let y1 = (y + th / 2 + pad_y).min(self.height - 1);
-                        self.draw_rect_outline(buf, x0, y0, x1, y1, YELLOW);
-                    }
-                }
-                self.draw_text_centered(
-                    buf,
-                    "Up/Down choose   Enter/Space load   Esc back",
-                    18.0,
-                    cx,
-                    self.height - 24,
-                    GRAY,
-                );
-            }
             AppState::Loading {
                 status, started_at, ..
             } => {
@@ -179,11 +133,11 @@ impl Renderer {
                 );
             }
             AppState::Question {
-                request,
                 items,
                 current_idx,
                 start_time,
                 duration,
+                ..
             } => {
                 let item = &items[*current_idx];
                 let timer_radius = 40usize;
@@ -198,12 +152,7 @@ impl Renderer {
                     .saturating_sub(std::time::Duration::from_secs_f32(elapsed))
                     .as_secs()) as i32;
 
-                let heading = if request.subject == crate::app::TriviaSubject::RecentNews {
-                    format!("QUESTION - {}", request.menu_title())
-                } else {
-                    "QUESTION".to_string()
-                };
-                self.draw_text_centered(buf, &heading, 24.0, cx, 34, GRAY);
+                self.draw_text_centered(buf, "QUESTION", 24.0, cx, 34, GRAY);
                 let text_cx = cx.saturating_sub(30);
                 let question_cy = self.height * 2 / 5;
                 self.draw_wrapped_text_fit_centered(
@@ -250,12 +199,7 @@ impl Renderer {
                 selected_action,
             } => {
                 let item = &items[*current_idx];
-                let heading = if request.subject == crate::app::TriviaSubject::RecentNews {
-                    format!("ANSWER - {}", request.menu_title())
-                } else {
-                    "ANSWER".to_string()
-                };
-                self.draw_text_centered(buf, &heading, 24.0, cx, 34, GRAY);
+                self.draw_text_centered(buf, "ANSWER", 24.0, cx, 34, GRAY);
 
                 // Answer text: constrained to not overlap bottom button row
                 let answer_cy = self.height * 2 / 5;
